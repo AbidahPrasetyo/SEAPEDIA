@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Pilihan peran (role) sesuai aturan SEAPEDIA
+enum Role {
+  ADMIN
+  SELLER
+  BUYER
+  DRIVER
+}
+
+// Tabel User
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  roles     Role[]   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store?
+
+  wallet    Wallet?
+  cart      Cart?
+  orders    Order[]
+}
+
+// ==========================================
+// LEVEL 1: Autentikasi & Publik
+// ==========================================
+
+// Tabel untuk Review Aplikasi Publik (Level 1)
+model AppReview {
+  id        String   @id @default(uuid())
+  name      String   @default("Guest") // Tamu boleh mengisi
+  rating    Int      // Rating 1 sampai 5
+  comment   String
+  createdAt DateTime @default(now())
+}
+
+// ==========================================
+// LEVEL 2: Manajemen Toko & Produk
+// ==========================================
+
+// Tabel untuk Toko (Store)
+model Store {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  ownerId     String    @unique // 1 User = 1 Store
+  owner       User      @relation(fields: [ownerId], references: [id])
+  products    Product[]
+  createdAt   DateTime  @default(now())
+
+  orders    Order[]
+}
+
+// Tabel untuk Produk (Product)
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  price       Float
+  stock       Int      @default(0)
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id])
+  createdAt   DateTime @default(now())
+
+  cartItems   CartItem[]
+  orderItems OrderItem[]
+}
+
+// ==========================================
+// LEVEL 3: Buyer Experience
+// ==========================================
+
+// Tabel Dompet Digital Pembeli
+model Wallet {
+  id        String   @id @default(uuid())
+  balance   Float    @default(0) // Saldo awal Rp 0
+  userId    String   @unique     // 1 User = 1 Wallet
+  user      User     @relation(fields: [userId], references: [id])
+  updatedAt DateTime @updatedAt
+}
+
+// Tabel Keranjang Belanja Utama
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique     // 1 User = 1 Keranjang aktif
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+}
+
+// Tabel Item di dalam Keranjang Belanja
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int      @default(1)
+}
+
+// Tabel Pesanan Utama
+model Order {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  storeId      String
+  store        Store       @relation(fields: [storeId], references: [id])
+  subtotal     Float
+  tax          Float       // PPN 12%
+  shippingCost Float       // Ongkos Kirim
+  totalAmount  Float       // Grand Total
+  status       String      @default("PAID")
+  createdAt    DateTime    @default(now())
+  items        OrderItem[]
+}
+
+// Tabel Detail Item yang Dipesan
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float   // Merekam harga barang pada saat dibeli
+}

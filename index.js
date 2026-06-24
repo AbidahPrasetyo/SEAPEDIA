@@ -1,0 +1,720 @@
+const jwt = require('jsonwebtoken');
+const express = require('express');
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcrypt');
+// jwt akan kita pakai nanti saat pembuatan fitur Login
+// const jwt = require('jsonwebtoken'); 
+
+const prisma = new PrismaClient();
+const app = express();
+
+// Middleware wajib agar Express bisa membaca data JSON yang dikirim ke server
+app.use(express.json());
+
+// ==========================================
+// MIDDLEWARE: SATPAM PENGECEK TOKEN
+// ==========================================
+const verifyToken = (req, res, next) => {
+  // 1. Ambil token dari header request
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Format standar: "Bearer <token>"
+
+  // 2. Jika tidak ada token, tolak akses
+  if (!token) {
+    return res.status(401).json({ error: "Akses ditolak. Token tidak ditemukan!" });
+  }
+
+  // 3. Verifikasi keaslian token
+  const SECRET_KEY = "RahasiaTokenIniSangatKuat"; // Harus sama dengan yang di rute Login
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ error: "Token tidak valid atau sudah kedaluwarsa!" });
+    
+    // 4. Jika valid, simpan data payload token ke dalam request (req.user)
+    req.user = user; 
+    next(); // Lanjut ke rute tujuan
+  });
+};
+
+// ==========================================
+// ROUTE: REGISTRASI USER
+// ==========================================
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    // 1. Tangkap data yang dikirim oleh user
+    const { username, email, password, roles } = req.body;
+
+    // 2. Cek apakah username atau email sudah pernah terdaftar
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: email }, { username: username }]
+      }
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ error: "Username atau Email sudah terdaftar!" });
+    }
+
+    // 3. Enkripsi (Hash) password demi keamanan
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // 4. Simpan data user baru ke database PostgreSQL
+    const newUser = await prisma.user.create({
+      data: {
+        username: username,
+        email: email,
+        password: hashedPassword,
+        roles: roles // Contoh nilai: ["BUYER", "SELLER"]
+      }
+    });
+
+    // 5. Kembalikan respons sukses (tanpa mengembalikan password!)
+    res.status(201).json({
+      message: "Registrasi berhasil!",
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        roles: newUser.roles
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Terjadi kesalahan internal pada server" });
+  }
+});
+
+// ==========================================
+// ROUTE: LOGIN USER
+// ==========================================
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    // 1. Cari user berdasarkan email ATAU username
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: email }, { username: username }]
+      }
+    });
+
+    // Jika user tidak ditemukan
+    if (!user) {
+      return res.status(401).json({ error: "Akun tidak ditemukan!" });
+    }
+
+    // 2. Cocokkan password yang diketik dengan yang ada di database (yang di-hash)
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Password salah!" });
+    }
+
+    // 3. Buat JWT (Tiket Masuk)
+    // RahasiaTokenIni harusnya ditaruh di file .env, tapi kita taruh di sini dulu agar mudah
+    const SECRET_KEY = "RahasiaTokenIniSangatKuat"; 
+    
+    // Perhatikan: Kita HANYA memasukkan data yang tidak sensitif ke dalam token
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        username: user.username,
+        roles: user.roles
+      }, 
+      SECRET_KEY, 
+      { expiresIn: '1d' } // Token hangus dalam 1 hari
+    );
+
+    // 4. Kirim balasan sukses beserta token dan daftar peran yang dimiliki
+    res.status(200).json({
+      message: "Login berhasil!",
+      token: token,
+      availableRoles: user.roles // Penting untuk Level 1 COMPFEST: Biar user tahu dia punya role apa saja
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Terjadi kesalahan saat login" });
+  }
+});
+
+// ==========================================
+// ROUTE: MEMILIH PERAN AKTIF (ACTIVE ROLE)
+// ==========================================
+app.post('/api/auth/select-role', verifyToken, async (req, res) => {
+  try {
+    const { role } = req.body; // Contoh input: "SELLER"
+    const userId = req.user.userId; // Didapat dari payload token awal
+
+    // 1. Cek data pengguna terbaru di database
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    // 2. Validasi: Apakah pengguna ini benar-benar memiliki peran yang dia minta?
+    if (!user.roles.includes(role)) {
+      return res.status(403).json({ error: `Kamu tidak terdaftar sebagai ${role}!` });
+    }
+
+    // 3. Buat Token BARU yang sekarang menyertakan 'activeRole'
+    const SECRET_KEY = "RahasiaTokenIniSangatKuat";
+    const newToken = jwt.sign(
+      { 
+        userId: user.id, 
+        username: user.username,
+        roles: user.roles,
+        activeRole: role // <--- INI KUNCI UTAMA LEVEL 1
+      }, 
+      SECRET_KEY, 
+      { expiresIn: '1d' } 
+    );
+
+    // 4. Kirim token baru ke klien
+    res.status(200).json({
+      message: `Sesi berhasil diubah. Peran aktif saat ini: ${role}`,
+      token: newToken,
+      activeRole: role
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Terjadi kesalahan saat mengubah peran aktif" });
+  }
+});
+
+// ==========================================
+// ROUTE: PROFIL USER (GET /api/auth/me)
+// ==========================================
+app.get('/api/auth/me', verifyToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { id: true, username: true, email: true, roles: true } // Jangan ambil password!
+    });
+    
+    res.status(200).json({
+      profile: user,
+      activeRole: req.user.activeRole || "Belum memilih peran aktif"
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil profil" });
+  }
+});
+
+// // ==========================================
+// // ROUTE: KATALOG PRODUK PUBLIK (DUMMY)
+// // ==========================================
+// // Sesuai syarat Level 1: Menggunakan data dummy karena backend produk belum terintegrasi
+// app.get('/api/products', (req, res) => {
+//   const dummyProducts = [
+//     { id: 1, name: "Kaos Polos", price: 50000, store: "Toko Sasa" },
+//     { id: 2, name: "Kacamata Hitam", price: 35000, store: "Kacamata Jaya" }
+//   ];
+//   res.status(200).json({ data: dummyProducts });
+// });
+
+// ==========================================
+// ROUTE: KATALOG PRODUK PUBLIK (ASLI DARI DATABASE)
+// ==========================================
+app.get('/api/products', async (req, res) => {
+  try {
+    // Mengambil semua produk beserta nama toko pembuatnya
+    const products = await prisma.product.findMany({
+      include: {
+        store: {
+          select: { name: true } // Hanya ambil nama toko untuk ditampilkan
+        }
+      },
+      orderBy: { createdAt: 'desc' } // Urutkan dari yang terbaru
+    });
+    res.status(200).json({ data: products });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data produk" });
+  }
+});
+
+// 3. Lihat Dasbor Toko Sendiri (GET /api/stores/me)
+app.get('/api/stores/me', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Peran aktif bukan SELLER." });
+    }
+
+    // Cari toko milik user beserta daftar produknya
+    const store = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId },
+      include: { products: true } // Mengambil sekalian data produk yang ada di toko ini
+    });
+
+    if (!store) {
+      return res.status(404).json({ error: "Kamu belum memiliki toko." });
+    }
+
+    res.status(200).json({ data: store });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data toko." });
+  }
+});
+
+// 4. Update Data Produk (PUT /api/products/:id)
+app.put('/api/products/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak." });
+    }
+
+    const productId = req.params.id;
+    const { name, description, price, stock } = req.body;
+
+    // Pastikan user punya toko
+    const store = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId }
+    });
+    if (!store) return res.status(404).json({ error: "Toko tidak ditemukan." });
+
+    // Cek apakah produk ada dan memang milik toko user ini
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) return res.status(404).json({ error: "Produk tidak ditemukan." });
+    if (product.storeId !== store.id) return res.status(403).json({ error: "Ini bukan produk tokomu!" });
+
+    // Update produk
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: {
+        name: name || product.name,
+        description: description || product.description,
+        price: price ? parseFloat(price) : product.price,
+        stock: stock !== undefined ? parseInt(stock) : product.stock
+      }
+    });
+
+    res.status(200).json({ message: "Produk berhasil diupdate!", product: updatedProduct });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengupdate produk." });
+  }
+});
+
+// 5. Hapus Produk (DELETE /api/products/:id)
+app.delete('/api/products/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak." });
+    }
+
+    const productId = req.params.id;
+
+    // Pastikan user punya toko dan produk tersebut milik mereka
+    const store = await prisma.store.findUnique({ where: { ownerId: req.user.userId } });
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+
+    if (!store || !product || product.storeId !== store.id) {
+      return res.status(403).json({ error: "Akses ditolak atau produk tidak ditemukan." });
+    }
+
+    // Hapus produk
+    await prisma.product.delete({ where: { id: productId } });
+
+    res.status(200).json({ message: "Produk berhasil dihapus!" });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menghapus produk." });
+  }
+});
+
+// ==========================================
+// ROUTE: REVIEW APLIKASI PUBLIK
+// ==========================================
+// 1. Submit Review (Bisa oleh Guest)
+app.post('/api/reviews', async (req, res) => {
+  try {
+    const { name, rating, comment } = req.body;
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ error: "Rating harus antara 1 sampai 5" });
+    }
+
+    const newReview = await prisma.appReview.create({
+      data: { name: name || "Guest", rating, comment }
+    });
+
+    res.status(201).json({ message: "Terima kasih atas ulasanmu!", review: newReview });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengirim ulasan" });
+  }
+});
+
+// 2. Tampilkan semua review publik
+app.get('/api/reviews', async (req, res) => {
+  try {
+    const reviews = await prisma.appReview.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.status(200).json({ data: reviews });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data ulasan" });
+  }
+});
+
+// ==========================================
+// LEVEL 2: SELLER EXPERIENCE
+// ==========================================
+
+// 1. Buat Toko Baru (POST /api/stores)
+app.post('/api/stores', verifyToken, async (req, res) => {
+  try {
+    // Validasi: Pastikan role aktif adalah SELLER
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Peran aktifmu saat ini bukan SELLER." });
+    }
+
+    const { name, description } = req.body;
+
+    // Validasi: Cek apakah user sudah punya toko (1 User = 1 Toko)
+    const existingStore = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId }
+    });
+
+    if (existingStore) {
+      return res.status(400).json({ error: "Kamu sudah memiliki toko!" });
+    }
+
+    // Buat toko
+    const newStore = await prisma.store.create({
+      data: {
+        name,
+        description,
+        ownerId: req.user.userId
+      }
+    });
+
+    res.status(201).json({ message: "Toko berhasil dibuat!", store: newStore });
+  } catch (error) {
+    // Tangani error jika nama toko sudah dipakai (Unique Constraint)
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: "Nama toko sudah digunakan, pilih nama lain." });
+    }
+    res.status(500).json({ error: "Gagal membuat toko." });
+  }
+});
+
+// 2. Tambah Produk Baru ke Toko (POST /api/products)
+app.post('/api/products', verifyToken, async (req, res) => {
+  try {
+    // Validasi: Pastikan role aktif adalah SELLER
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Peran aktifmu saat ini bukan SELLER." });
+    }
+
+    // Cari toko milik user yang sedang login
+    const store = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId }
+    });
+
+    if (!store) {
+      return res.status(404).json({ error: "Kamu belum membuat toko. Buat toko terlebih dahulu!" });
+    }
+
+    const { name, description, price, stock } = req.body;
+
+    // Validasi input
+    if (!name || !price) {
+      return res.status(400).json({ error: "Nama dan harga produk wajib diisi." });
+    }
+
+    // Buat produk yang terhubung dengan toko
+    const newProduct = await prisma.product.create({
+      data: {
+        name,
+        description: description || "",
+        price: parseFloat(price),
+        stock: parseInt(stock) || 0,
+        storeId: store.id
+      }
+    });
+
+    res.status(201).json({ message: "Produk berhasil ditambahkan!", product: newProduct });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menambahkan produk." });
+  }
+});
+
+// ==========================================
+// LEVEL 3: BUYER EXPERIENCE (WALLET & CART)
+// ==========================================
+
+// 1. Cek Saldo Dompet (GET /api/wallet)
+app.get('/api/wallet', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') {
+      return res.status(403).json({ error: "Akses ditolak. Peran aktifmu harus BUYER." });
+    }
+
+    // Cari dompet user. Jika belum ada, sistem otomatis membuatkannya dengan saldo Rp 0
+    let wallet = await prisma.wallet.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { userId: req.user.userId, balance: 0 }
+      });
+    }
+
+    res.status(200).json({ data: wallet });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data dompet." });
+  }
+});
+
+// 2. Top-Up Saldo Dompet (POST /api/wallet/topup)
+app.post('/api/wallet/topup', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') {
+      return res.status(403).json({ error: "Akses ditolak. Peran aktifmu harus BUYER." });
+    }
+
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Jumlah top-up harus lebih dari Rp 0!" });
+    }
+
+    // Upsert: Update saldo jika dompet sudah ada, atau buat dompet baru jika belum ada
+    const wallet = await prisma.wallet.upsert({
+      where: { userId: req.user.userId },
+      update: { balance: { increment: amount } }, // Menambahkan saldo yang ada dengan amount baru
+      create: { userId: req.user.userId, balance: amount }
+    });
+
+    res.status(200).json({ message: `Top-up sebesar Rp ${amount} berhasil!`, wallet });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal melakukan top-up." });
+  }
+});
+
+// ==========================================
+// ROUTE: KERANJANG BELANJA (SINGLE-STORE RULE)
+// ==========================================
+
+// 1. Lihat Isi Keranjang (GET /api/cart)
+app.get('/api/cart', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+
+    // Cari keranjang user beserta isi produk dan info tokonya
+    let cart = await prisma.cart.findUnique({
+      where: { userId: req.user.userId },
+      include: {
+        items: {
+          include: { 
+            product: {
+              include: { store: true }
+            } 
+          }
+        }
+      }
+    });
+
+    // Jika belum punya keranjang, buatkan kosong
+    if (!cart) {
+      cart = await prisma.cart.create({ 
+        data: { userId: req.user.userId }, 
+        include: { items: true } 
+      });
+    }
+
+    res.status(200).json({ data: cart });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil keranjang." });
+  }
+});
+
+// 2. Tambah Produk ke Keranjang (POST /api/cart)
+app.post('/api/cart', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+
+    const { productId, quantity } = req.body;
+    const qty = parseInt(quantity) || 1;
+
+    // Cek apakah produknya ada dan stoknya cukup
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) return res.status(404).json({ error: "Produk tidak ditemukan." });
+    if (product.stock < qty) return res.status(400).json({ error: "Stok tidak mencukupi." });
+
+    // Cari atau buat keranjang
+    let cart = await prisma.cart.findUnique({
+      where: { userId: req.user.userId },
+      include: { items: { include: { product: true } } }
+    });
+
+    if (!cart) {
+      cart = await prisma.cart.create({
+        data: { userId: req.user.userId },
+        include: { items: { include: { product: true } } }
+      });
+    }
+
+    // ==========================================
+    // LOGIKA SINGLE-STORE CHECKOUT
+    // ==========================================
+    if (cart.items.length > 0) {
+      // Ambil ID toko dari barang pertama yang ada di keranjang
+      const existingStoreId = cart.items[0].product.storeId;
+      
+      // Jika toko barang baru berbeda dengan toko barang di keranjang, TOLAK!
+      if (existingStoreId !== product.storeId) {
+        return res.status(400).json({ 
+          error: "Keranjang hanya boleh berisi produk dari 1 toko yang sama. Checkout atau kosongkan keranjangmu dulu!" 
+        });
+      }
+    }
+
+    // Cek apakah barang sudah ada di keranjang. Jika ada, tambah jumlahnya
+    const existingItem = cart.items.find(item => item.productId === productId);
+
+    if (existingItem) {
+      const updatedItem = await prisma.cartItem.update({
+        where: { id: existingItem.id },
+        data: { quantity: existingItem.quantity + qty }
+      });
+      return res.status(200).json({ message: "Kuantitas produk di keranjang ditambahkan!", item: updatedItem });
+    }
+
+    // Jika barang belum ada di keranjang, buat item baru
+    const newItem = await prisma.cartItem.create({
+      data: {
+        cartId: cart.id,
+        productId: productId,
+        quantity: qty
+      }
+    });
+
+    res.status(201).json({ message: "Produk berhasil ditambahkan ke keranjang!", item: newItem });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menambahkan ke keranjang." });
+  }
+});
+
+// 3. Hapus Produk dari Keranjang (DELETE /api/cart/:itemId)
+app.delete('/api/cart/:itemId', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+    
+    await prisma.cartItem.delete({
+      where: { id: req.params.itemId }
+    });
+
+    res.status(200).json({ message: "Produk dihapus dari keranjang." });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menghapus produk." });
+  }
+});
+
+// ==========================================
+// ROUTE: CHECKOUT & TRANSAKSI
+// ==========================================
+app.post('/api/checkout', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+
+    // 1. Ambil data keranjang beserta barang dan tokonya
+    const cart = await prisma.cart.findUnique({
+      where: { userId: req.user.userId },
+      include: { items: { include: { product: true } } }
+    });
+
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({ error: "Keranjang belanjamu kosong!" });
+    }
+
+    const storeId = cart.items[0].product.storeId;
+
+    // 2. Hitung Rincian Biaya (Subtotal, Ongkir Tetap, dan PPN 12%)
+    let subtotal = 0;
+    for (const item of cart.items) {
+      // Cek stok secara real-time
+      if (item.product.stock < item.quantity) {
+        return res.status(400).json({ error: `Stok produk ${item.product.name} tidak mencukupi!` });
+      }
+      subtotal += item.product.price * item.quantity;
+    }
+
+    const shippingCost = 15000; // Contoh ongkir flat Rp 15.000
+    const tax = subtotal * 0.12; // PPN 12% 
+    const grandTotal = subtotal + shippingCost + tax;
+
+    // 3. Cek Saldo Dompet Pembeli
+    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.userId } });
+    if (!wallet || wallet.balance < grandTotal) {
+      return res.status(400).json({ 
+        error: "Saldo dompet tidak mencukupi.",
+        required: grandTotal,
+        currentBalance: wallet ? wallet.balance : 0
+      });
+    }
+
+    // 4. EKSEKUSI TRANSAKSI DATABASE (All or Nothing)
+    // prisma.$transaction memastikan jika salah satu gagal, semua dibatalkan!
+    const transactionResult = await prisma.$transaction(async (prisma) => {
+      
+      // a. Potong saldo dompet
+      await prisma.wallet.update({
+        where: { userId: req.user.userId },
+        data: { balance: { decrement: grandTotal } }
+      });
+
+      // b. Buat Rekaman Pesanan (Order)
+      const newOrder = await prisma.order.create({
+        data: {
+          userId: req.user.userId,
+          storeId: storeId,
+          subtotal: subtotal,
+          tax: tax,
+          shippingCost: shippingCost,
+          totalAmount: grandTotal,
+          status: "PAID",
+          items: {
+            create: cart.items.map(item => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.product.price // Kunci harga saat ini
+            }))
+          }
+        }
+      });
+
+      // c. Kurangi stok barang di toko
+      for (const item of cart.items) {
+        await prisma.product.update({
+          where: { id: item.productId },
+          data: { stock: { decrement: item.quantity } }
+        });
+      }
+
+      // d. Kosongkan keranjang (Hapus CartItem)
+      await prisma.cartItem.deleteMany({
+        where: { cartId: cart.id }
+      });
+
+      return newOrder;
+    });
+
+    res.status(200).json({ 
+      message: "Checkout berhasil! Pesanan sedang diproses.", 
+      receipt: transactionResult 
+    });
+
+  } catch (error) {
+    console.error("Checkout Error:", error);
+    res.status(500).json({ error: "Terjadi kesalahan sistem saat memproses transaksi." });
+  }
+});
+
+// ==========================================
+// MENJALANKAN SERVER
+// ==========================================
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server SEAPEDIA berjalan dengan aman di http://localhost:${PORT}`);
+});
