@@ -381,3 +381,80 @@ Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, m
 }
 
 ```
+
+---
+
+## 📌 Level 4: Discounts and Seller Order Processing
+
+Fitur pada level ini mencakup manajemen diskon (Voucher & Promo) oleh Admin, pemrosesan pesanan oleh Seller, serta rekapitulasi laporan transaksi.
+
+### 1. Buat Voucher Baru (Khusus ADMIN)
+Membuat diskon tipe Voucher dengan batas kedaluwarsa dan batas kuota penggunaan.
+
+**URL:** `/api/admin/vouchers`
+**Method:** `POST`
+**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
+
+**Body JSON:**
+```json
+{
+  "code": "COMPFEST18",
+  "discount": 20000,
+  "quota": 100,
+  "expiresAt": "2026-12-31"
+}
+
+```
+
+### 2. Buat Promo Baru (Khusus ADMIN)
+
+Membuat diskon tipe Promo dengan batas kedaluwarsa tanpa batas kuota penggunaan.
+
+**URL:** `/api/admin/promos`
+**Method:** `POST`
+**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
+
+**Body JSON:**
+
+```json
+{
+  "code": "ONGKIRMURAH",
+  "discount": 10000,
+  "expiresAt": "2026-12-31"
+}
+
+```
+
+### 3. Lihat Semua Diskon (Khusus ADMIN)
+
+Mengambil seluruh data Voucher dan Promo yang tersedia di dalam sistem.
+
+**URL:** `/api/admin/discounts`
+**Method:** `GET`
+**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
+
+### 4. Proses Pesanan (Khusus SELLER)
+
+Mengubah status pesanan masuk dari `"Sedang Dikemas"` menjadi `"Menunggu Pengirim"`.
+
+**URL:** `/api/seller/orders/:orderId/process`
+**Method:** `PUT`
+**Header:** `Authorization: Bearer <TOKEN_SELLER>`
+
+### 5. Laporan Pengeluaran Buyer
+
+Mengambil seluruh riwayat belanja pembeli beserta total kalkulasi uang yang telah dihabiskan.
+
+**URL:** `/api/buyer/report`
+**Method:** `GET`
+**Header:** `Authorization: Bearer <TOKEN_BUYER>`
+
+### 6. Laporan Pendapatan Seller
+
+Mengambil seluruh riwayat pesanan yang masuk ke toko beserta total estimasi pendapatan bersih. Pendapatan dihitung dari subtotal setelah diskon (tidak termasuk ongkos kirim dan PPN).
+
+**URL:** `/api/seller/report`
+**Method:** `GET`
+**Header:** `Authorization: Bearer <TOKEN_SELLER>`
+
+```

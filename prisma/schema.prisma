@@ -122,6 +122,9 @@ model Order {
   status       String      @default("PAID")
   createdAt    DateTime    @default(now())
   items        OrderItem[]
+
+  discount     Float       @default(0)
+  history      OrderHistory[]
 }
 
 // Tabel Detail Item yang Dipesan
@@ -133,4 +136,36 @@ model OrderItem {
   product   Product @relation(fields: [productId], references: [id])
   quantity  Int
   price     Float   // Merekam harga barang pada saat dibeli
+}
+
+// ==========================================
+// LEVEL 4: DISCOUNTS & ORDER PROCESSING
+// ==========================================
+
+// Tabel Voucher (Diskon dengan batas kuota dan waktu)
+model Voucher {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  discount  Float    // Nominal potongan harga (misal: 10000)
+  quota     Int      // Sisa penggunaan
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// Tabel Promo (Diskon hanya dengan batas waktu)
+model Promo {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  discount  Float    // Nominal potongan harga
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// Tabel Riwayat Status Pesanan (Tracking)
+model OrderHistory {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  status    String   // Contoh: "Sedang Dikemas", "Menunggu Pengirim"
+  createdAt DateTime @default(now()) // Timestamp otomatis kapan status berubah
 }

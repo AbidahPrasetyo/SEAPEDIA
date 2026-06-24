@@ -611,103 +611,539 @@ app.delete('/api/cart/:itemId', verifyToken, async (req, res) => {
   }
 });
 
+// // ==========================================
+// // ROUTE: CHECKOUT & TRANSAKSI (level 3 awal)
+// // ==========================================
+// app.post('/api/checkout', verifyToken, async (req, res) => {
+//   try {
+//     if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+
+//     // 1. Ambil data keranjang beserta barang dan tokonya
+//     const cart = await prisma.cart.findUnique({
+//       where: { userId: req.user.userId },
+//       include: { items: { include: { product: true } } }
+//     });
+
+//     if (!cart || cart.items.length === 0) {
+//       return res.status(400).json({ error: "Keranjang belanjamu kosong!" });
+//     }
+
+//     const storeId = cart.items[0].product.storeId;
+
+//     // 2. Hitung Rincian Biaya (Subtotal, Ongkir Tetap, dan PPN 12%)
+//     let subtotal = 0;
+//     for (const item of cart.items) {
+//       // Cek stok secara real-time
+//       if (item.product.stock < item.quantity) {
+//         return res.status(400).json({ error: `Stok produk ${item.product.name} tidak mencukupi!` });
+//       }
+//       subtotal += item.product.price * item.quantity;
+//     }
+
+//     const shippingCost = 15000; // Contoh ongkir flat Rp 15.000
+//     const tax = subtotal * 0.12; // PPN 12% 
+//     const grandTotal = subtotal + shippingCost + tax;
+
+//     // 3. Cek Saldo Dompet Pembeli
+//     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.userId } });
+//     if (!wallet || wallet.balance < grandTotal) {
+//       return res.status(400).json({ 
+//         error: "Saldo dompet tidak mencukupi.",
+//         required: grandTotal,
+//         currentBalance: wallet ? wallet.balance : 0
+//       });
+//     }
+
+//     // 4. EKSEKUSI TRANSAKSI DATABASE (All or Nothing)
+//     // prisma.$transaction memastikan jika salah satu gagal, semua dibatalkan!
+//     const transactionResult = await prisma.$transaction(async (prisma) => {
+      
+//       // a. Potong saldo dompet
+//       await prisma.wallet.update({
+//         where: { userId: req.user.userId },
+//         data: { balance: { decrement: grandTotal } }
+//       });
+
+//       // b. Buat Rekaman Pesanan (Order)
+//       const newOrder = await prisma.order.create({
+//         data: {
+//           userId: req.user.userId,
+//           storeId: storeId,
+//           subtotal: subtotal,
+//           tax: tax,
+//           shippingCost: shippingCost,
+//           totalAmount: grandTotal,
+//           status: "PAID",
+//           items: {
+//             create: cart.items.map(item => ({
+//               productId: item.productId,
+//               quantity: item.quantity,
+//               price: item.product.price // Kunci harga saat ini
+//             }))
+//           }
+//         }
+//       });
+
+//       // c. Kurangi stok barang di toko
+//       for (const item of cart.items) {
+//         await prisma.product.update({
+//           where: { id: item.productId },
+//           data: { stock: { decrement: item.quantity } }
+//         });
+//       }
+
+//       // d. Kosongkan keranjang (Hapus CartItem)
+//       await prisma.cartItem.deleteMany({
+//         where: { cartId: cart.id }
+//       });
+
+//       return newOrder;
+//     });
+
+//     res.status(200).json({ 
+//       message: "Checkout berhasil! Pesanan sedang diproses.", 
+//       receipt: transactionResult 
+//     });
+
+//   } catch (error) {
+//     console.error("Checkout Error:", error);
+//     res.status(500).json({ error: "Terjadi kesalahan sistem saat memproses transaksi." });
+//   }
+// });
+
 // ==========================================
-// ROUTE: CHECKOUT & TRANSAKSI
+// LEVEL 3 & 4: CHECKOUT (WITH DISCOUNT LOGIC) -- modified for Level 4
 // ==========================================
 app.post('/api/checkout', verifyToken, async (req, res) => {
   try {
-    if (req.user.activeRole !== 'BUYER') return res.status(403).json({ error: "Akses ditolak." });
+    // 1. Validasi Role
+    if (req.user.activeRole !== 'BUYER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus BUYER." });
+    }
 
-    // 1. Ambil data keranjang beserta barang dan tokonya
+    // [PERBAIKAN 1]: Gunakan req.user.userId sesuai isi token JWT kita
+    const userId = req.user.userId; 
+    const { deliveryMethod, discountCode } = req.body; 
+
+    // 2. Cek Keranjang
+    // [PERBAIKAN 2]: Cari Cart berdasarkan userId, lalu ambil items-nya
     const cart = await prisma.cart.findUnique({
-      where: { userId: req.user.userId },
+      where: { userId: userId },
       include: { items: { include: { product: true } } }
     });
 
     if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ error: "Keranjang belanjamu kosong!" });
+      return res.status(400).json({ error: "Keranjang kosong!" });
     }
 
-    const storeId = cart.items[0].product.storeId;
+    const cartItems = cart.items;
+    const storeId = cartItems[0].product.storeId;
 
-    // 2. Hitung Rincian Biaya (Subtotal, Ongkir Tetap, dan PPN 12%)
+    // 3. Hitung Subtotal
     let subtotal = 0;
-    for (const item of cart.items) {
-      // Cek stok secara real-time
-      if (item.product.stock < item.quantity) {
-        return res.status(400).json({ error: `Stok produk ${item.product.name} tidak mencukupi!` });
-      }
+    for (const item of cartItems) {
       subtotal += item.product.price * item.quantity;
     }
 
-    const shippingCost = 15000; // Contoh ongkir flat Rp 15.000
-    const tax = subtotal * 0.12; // PPN 12% 
-    const grandTotal = subtotal + shippingCost + tax;
+    // 4. Tentukan Ongkos Kirim (Delivery Fee)
+    let shippingCost = 0;
+    if (deliveryMethod === 'Instant') shippingCost = 20000;
+    else if (deliveryMethod === 'Next Day') shippingCost = 15000;
+    else if (deliveryMethod === 'Regular') shippingCost = 10000;
+    else return res.status(400).json({ error: "Metode pengiriman tidak valid!" });
 
-    // 3. Cek Saldo Dompet Pembeli
-    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.userId } });
-    if (!wallet || wallet.balance < grandTotal) {
-      return res.status(400).json({ 
-        error: "Saldo dompet tidak mencukupi.",
-        required: grandTotal,
-        currentBalance: wallet ? wallet.balance : 0
-      });
+    // 5. LOGIKA DISKON (LEVEL 4)
+    let discountAmount = 0;
+    let voucherUsed = null;
+    let promoUsed = null;
+    let discountTypeMessage = "Tidak ada diskon";
+
+    if (discountCode) {
+      const codeUpper = discountCode.toUpperCase();
+      const now = new Date();
+
+      voucherUsed = await prisma.voucher.findUnique({ where: { code: codeUpper } });
+      promoUsed = await prisma.promo.findUnique({ where: { code: codeUpper } });
+
+      if (!voucherUsed && !promoUsed) {
+        return res.status(400).json({ error: "Kode diskon tidak ditemukan!" });
+      }
+
+      if (voucherUsed) {
+        if (voucherUsed.expiresAt < now) return res.status(400).json({ error: "Voucher sudah kedaluwarsa!" });
+        if (voucherUsed.quota <= 0) return res.status(400).json({ error: "Kuota voucher habis!" });
+        discountAmount = voucherUsed.discount;
+        discountTypeMessage = "Voucher digunakan";
+      } 
+      else if (promoUsed) {
+        if (promoUsed.expiresAt < now) return res.status(400).json({ error: "Promo sudah kedaluwarsa!" });
+        discountAmount = promoUsed.discount;
+        discountTypeMessage = "Promo digunakan";
+      }
+
+      // Cegah diskon minus 
+      if (discountAmount > subtotal) {
+        discountAmount = subtotal; 
+      }
     }
 
-    // 4. EKSEKUSI TRANSAKSI DATABASE (All or Nothing)
-    // prisma.$transaction memastikan jika salah satu gagal, semua dibatalkan!
-    const transactionResult = await prisma.$transaction(async (prisma) => {
-      
-      // a. Potong saldo dompet
-      await prisma.wallet.update({
-        where: { userId: req.user.userId },
-        data: { balance: { decrement: grandTotal } }
-      });
+    // 6. Hitung PPN 12% dan Total Akhir
+    const taxBase = subtotal - discountAmount; 
+    const tax = taxBase * 0.12; 
+    const finalTotalAmount = taxBase + tax + shippingCost;
 
-      // b. Buat Rekaman Pesanan (Order)
-      const newOrder = await prisma.order.create({
+    // 7. Cek Saldo Buyer
+    // [PERBAIKAN 3]: Cek ke tabel WALLET, bukan tabel USER
+    const wallet = await prisma.wallet.findUnique({ where: { userId: userId } });
+    if (!wallet || wallet.balance < finalTotalAmount) {
+      return res.status(400).json({ error: "Saldo wallet tidak mencukupi untuk checkout ini!" });
+    }
+
+    // 8. Eksekusi Database Transaction (Jalur Aman)
+    const result = await prisma.$transaction(async (tx) => {
+      
+      const order = await tx.order.create({
         data: {
-          userId: req.user.userId,
+          userId: userId,
           storeId: storeId,
           subtotal: subtotal,
+          discount: discountAmount,
           tax: tax,
           shippingCost: shippingCost,
-          totalAmount: grandTotal,
-          status: "PAID",
+          totalAmount: finalTotalAmount,
+          status: "Sedang Dikemas", 
           items: {
-            create: cart.items.map(item => ({
+            create: cartItems.map(item => ({
               productId: item.productId,
               quantity: item.quantity,
-              price: item.product.price // Kunci harga saat ini
+              price: item.product.price
             }))
+          },
+          history: {
+            create: [{ status: "Sedang Dikemas" }] 
           }
-        }
+        },
+        include: { items: true, history: true }
       });
 
-      // c. Kurangi stok barang di toko
-      for (const item of cart.items) {
-        await prisma.product.update({
+      // [PERBAIKAN 4]: Potong saldo dari tabel WALLET
+      await tx.wallet.update({
+        where: { userId: userId },
+        data: { balance: { decrement: finalTotalAmount } }
+      });
+
+      // Kurangi Stok Produk
+      for (const item of cartItems) {
+        await tx.product.update({
           where: { id: item.productId },
           data: { stock: { decrement: item.quantity } }
         });
       }
 
-      // d. Kosongkan keranjang (Hapus CartItem)
-      await prisma.cartItem.deleteMany({
-        where: { cartId: cart.id }
-      });
+      // [PERBAIKAN 5]: Kosongkan Keranjang menggunakan cartId
+      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
 
-      return newOrder;
+      // Kurangi Kuota Voucher
+      if (voucherUsed) {
+        await tx.voucher.update({
+          where: { id: voucherUsed.id },
+          data: { quota: { decrement: 1 } }
+        });
+      }
+
+      return order;
     });
 
     res.status(200).json({ 
-      message: "Checkout berhasil! Pesanan sedang diproses.", 
-      receipt: transactionResult 
+      message: "Checkout berhasil!", 
+      summary: {
+        discountType: discountTypeMessage,
+        subtotal: subtotal,
+        discount: discountAmount,
+        shippingCost: shippingCost,
+        tax_PPN_12: tax,
+        finalTotal: finalTotalAmount
+      },
+      order: result 
     });
 
   } catch (error) {
-    console.error("Checkout Error:", error);
-    res.status(500).json({ error: "Terjadi kesalahan sistem saat memproses transaksi." });
+    // Menambahkan console.error agar jika terjadi error lagi, terminal akan memberi tahu penyebab pastinya!
+    console.error("Checkout Error Log:", error);
+    res.status(500).json({ error: "Gagal memproses checkout." });
+  }
+});
+
+// ==========================================
+// LEVEL 4: ADMIN (VOUCHER & PROMO MANAGEMENT)
+// ==========================================
+
+// 1. Buat Voucher Baru (Diskon dengan Kuota & Waktu)
+app.post('/api/admin/vouchers', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'ADMIN') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus ADMIN." });
+    }
+
+    const { code, discount, quota, expiresAt } = req.body;
+
+    if (!code || !discount || !quota || !expiresAt) {
+      return res.status(400).json({ error: "Data voucher tidak lengkap!" });
+    }
+
+    const newVoucher = await prisma.voucher.create({
+      data: {
+        code: code.toUpperCase(), // Pastikan kode selalu huruf besar
+        discount: parseFloat(discount),
+        quota: parseInt(quota),
+        expiresAt: new Date(expiresAt) // Konversi string tanggal menjadi format Date
+      }
+    });
+
+    res.status(201).json({ message: "Voucher berhasil dibuat!", data: newVoucher });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: "Kode voucher sudah pernah digunakan!" });
+    }
+    res.status(500).json({ error: "Gagal membuat voucher." });
+  }
+});
+
+// 2. Buat Promo Baru (Diskon hanya dengan Waktu)
+app.post('/api/admin/promos', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'ADMIN') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus ADMIN." });
+    }
+
+    const { code, discount, expiresAt } = req.body;
+
+    if (!code || !discount || !expiresAt) {
+      return res.status(400).json({ error: "Data promo tidak lengkap!" });
+    }
+
+    const newPromo = await prisma.promo.create({
+      data: {
+        code: code.toUpperCase(),
+        discount: parseFloat(discount),
+        expiresAt: new Date(expiresAt)
+      }
+    });
+
+    res.status(201).json({ message: "Promo berhasil dibuat!", data: newPromo });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: "Kode promo sudah pernah digunakan!" });
+    }
+    res.status(500).json({ error: "Gagal membuat promo." });
+  }
+});
+
+// 3. Lihat Daftar Semua Diskon (Voucher & Promo)
+app.get('/api/admin/discounts', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'ADMIN') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus ADMIN." });
+    }
+
+    // Mengambil semua data secara paralel agar lebih cepat
+    const [vouchers, promos] = await Promise.all([
+      prisma.voucher.findMany(),
+      prisma.promo.findMany()
+    ]);
+
+    res.status(200).json({ data: { vouchers, promos } });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data diskon." });
+  }
+});
+
+// ==========================================
+// LEVEL 4: SELLER ORDER PROCESSING
+// ==========================================
+
+// 1. Lihat Daftar Pesanan Masuk di Toko Seller
+app.get('/api/seller/orders', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus SELLER." });
+    }
+
+    // Cari ID toko milik Seller yang sedang login
+    const store = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId }
+    });
+
+    if (!store) {
+      return res.status(404).json({ error: "Kamu belum memiliki toko." });
+    }
+
+    // Ambil semua pesanan yang masuk ke toko tersebut
+    const orders = await prisma.order.findMany({
+      where: { storeId: store.id },
+      include: { 
+        items: { include: { product: true } },
+        history: true 
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.status(200).json({ data: orders });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil data pesanan." });
+  }
+});
+
+// 2. Proses Pesanan (Ubah status dari "Sedang Dikemas" menjadi "Menunggu Pengirim")
+app.put('/api/seller/orders/:orderId/process', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus SELLER." });
+    }
+
+    const orderId = req.params.orderId;
+    const userId = req.user.userId;
+
+    // Cari pesanan dan pastikan itu milik toko si Seller
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Pesanan tidak ditemukan." });
+    }
+
+    // Keamanan ekstra: Pastikan toko yang menerima pesanan adalah milik Seller yang sedang login
+    if (order.store.ownerId !== userId) {
+      return res.status(403).json({ error: "Akses ditolak. Ini bukan pesanan tokomu!" });
+    }
+
+    // Sesuai aturan: Hanya pesanan "Sedang Dikemas" yang bisa diproses
+    if (order.status !== "Sedang Dikemas") {
+      return res.status(400).json({ 
+        error: `Pesanan tidak bisa diproses karena status saat ini: ${order.status}` 
+      });
+    }
+
+    // Gunakan Transaction untuk memastikan status order dan riwayatnya tersimpan bersamaan
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      // Ubah status di tabel Order
+      const result = await tx.order.update({
+        where: { id: orderId },
+        data: { status: "Menunggu Pengirim" }
+      });
+
+      // Catat rekam jejak di tabel OrderHistory
+      await tx.orderHistory.create({
+        data: {
+          orderId: orderId,
+          status: "Menunggu Pengirim"
+        }
+      });
+
+      return result;
+    });
+
+    res.status(200).json({ 
+      message: "Pesanan berhasil diproses dan siap dijemput kurir!", 
+      data: updatedOrder 
+    });
+
+  } catch (error) {
+    console.error("Process Order Error:", error);
+    res.status(500).json({ error: "Gagal memproses pesanan." });
+  }
+});
+
+// ==========================================
+// LEVEL 4: BUYER & SELLER REPORTS
+// ==========================================
+
+// 1. Laporan Pengeluaran Buyer (Spending Report)
+app.get('/api/buyer/report', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'BUYER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus BUYER." });
+    }
+
+    // Ambil semua riwayat pesanan si pembeli
+    const orders = await prisma.order.findMany({
+      where: { userId: req.user.userId },
+      include: { 
+        items: { include: { product: true } },
+        history: true 
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Hitung total uang yang sudah dikeluarkan
+    let totalSpent = 0;
+    orders.forEach(order => {
+      totalSpent += order.totalAmount;
+    });
+
+    res.status(200).json({ 
+      message: "Laporan pengeluaran berhasil diambil",
+      summary: {
+        totalOrders: orders.length,
+        totalSpent: totalSpent
+      },
+      data: orders 
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil laporan Buyer." });
+  }
+});
+
+// 2. Laporan Pendapatan Seller (Income Report)
+app.get('/api/seller/report', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'SELLER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus SELLER." });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { ownerId: req.user.userId }
+    });
+
+    if (!store) {
+      return res.status(404).json({ error: "Kamu belum memiliki toko." });
+    }
+
+    // Ambil semua pesanan yang masuk ke toko ini
+    const orders = await prisma.order.findMany({
+      where: { storeId: store.id },
+      include: { 
+        items: { include: { product: true } },
+        history: true 
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Hitung pendapatan bersih Seller (Subtotal dikurangi diskon)
+    // Ongkir dan PPN tidak masuk ke kantong Seller
+    let totalIncome = 0;
+    orders.forEach(order => {
+      // Asumsi dasar: Pesanan yang dikembalikan uangnya tidak dihitung (persiapan Level 6)
+      if (order.status !== 'Dikembalikan') {
+        totalIncome += (order.subtotal - order.discount);
+      }
+    });
+
+    res.status(200).json({
+      message: "Laporan pendapatan toko berhasil diambil",
+      summary: {
+        storeName: store.name,
+        totalOrders: orders.length,
+        totalIncome: totalIncome
+      },
+      data: orders
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil laporan Seller." });
   }
 });
 
