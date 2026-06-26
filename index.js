@@ -1435,9 +1435,14 @@ app.post('/api/admin/simulate-overdue', verifyToken, async (req, res) => {
 });
 
 // ==========================================
-// MENJALANKAN SERVER
+// MENJALANKAN SERVER (MENDUKUNG LOKAL & VERCEL)
 // ==========================================
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Server SEAPEDIA berjalan dengan aman di http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = 3000;
+  app.listen(PORT, () => {
+    console.log(`Server SEAPEDIA berjalan dengan aman di http://localhost:${PORT}`);
+  });
+}
+
+// Export app agar bisa dibaca oleh sistem Serverless Vercel
+module.exports = app;
