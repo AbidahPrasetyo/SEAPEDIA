@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
+const xss = require('xss');
 // jwt akan kita pakai nanti saat pembuatan fitur Login
 // const jwt = require('jsonwebtoken'); 
 
@@ -322,36 +323,37 @@ app.delete('/api/products/:id', verifyToken, async (req, res) => {
 });
 
 // ==========================================
-// ROUTE: REVIEW APLIKASI PUBLIK
+// ROUTE: REVIEW APLIKASI PUBLIK (HARDENED)
 // ==========================================
-// 1. Submit Review (Bisa oleh Guest)
+// 1. Submit Review (Aman dari XSS)
 app.post('/api/reviews', async (req, res) => {
   try {
     const { name, rating, comment } = req.body;
 
-    if (rating < 1 || rating > 5) {
-      return res.status(400).json({ error: "Rating harus antara 1 sampai 5" });
+    // A. Validasi Input Ketat
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: "Rating wajib diisi dan harus antara 1 sampai 5!" });
+    }
+    if (!comment || comment.trim() === "") {
+      return res.status(400).json({ error: "Komentar tidak boleh kosong!" });
     }
 
+    // B. Sanitasi XSS (Pembersihan tag HTML/Script berbahaya)
+    const safeName = xss(name || "Guest");
+    const safeComment = xss(comment);
+
+    // C. Simpan ke Database
     const newReview = await prisma.appReview.create({
-      data: { name: name || "Guest", rating, comment }
+      data: { 
+        name: safeName, 
+        rating: parseInt(rating), 
+        comment: safeComment 
+      }
     });
 
     res.status(201).json({ message: "Terima kasih atas ulasanmu!", review: newReview });
   } catch (error) {
     res.status(500).json({ error: "Gagal mengirim ulasan" });
-  }
-});
-
-// 2. Tampilkan semua review publik
-app.get('/api/reviews', async (req, res) => {
-  try {
-    const reviews = await prisma.appReview.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    res.status(200).json({ data: reviews });
-  } catch (error) {
-    res.status(500).json({ error: "Gagal mengambil data ulasan" });
   }
 });
 

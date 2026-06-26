@@ -574,3 +574,27 @@ Memajukan waktu sistem (simulasi) untuk mendeteksi pesanan yang terlambat dipros
 }
 
 ```
+
+---
+
+## Level 7: Security Hardening & Finalization
+
+Pada level ini, aplikasi telah diamankan dari celah keamanan dasar dan dilengkapi dengan dokumentasi akhir untuk keperluan evaluasi end-to-end.
+
+### 🛡️ Catatan Keamanan (Security Notes)
+1. **SQL Injection Prevention:** Seluruh interaksi *database* menggunakan Prisma ORM yang secara otomatis melakukan *parameterized queries* sehingga kebal terhadap serangan SQL Injection.
+2. **XSS (Cross-Site Scripting) Prevention:** Input publik, terutama pada komentar ulasan (*App Review*), telah disanitasi menggunakan pustaka `xss` sebelum disimpan ke *database*. Hal ini mencegah eksekusi tag `<script>` berbahaya jika di-*render* oleh *frontend*.
+3. **Role-Based Access Control (RBAC):** Autorisasi divalidasi secara ketat di level *backend* melalui JWT Payload (`activeRole`) dan *middleware*. Pengguna multi-peran hanya dapat mengakses *endpoint* privat yang sesuai dengan peran aktif mereka di sesi tersebut.
+4. **Data Ownership Validation:** Aksi operasional sensitif (mengubah produk, memproses pesanan, menyelesaikan pengiriman) memiliki pengecekan lapis dua untuk memastikan entitas tersebut benar-benar milik *user* yang memintanya.
+
+### 🧪 Panduan Testing (End-to-End Demo Guide)
+Untuk mengevaluasi alur lengkap sistem SEAPEDIA, silakan ikuti siklus berikut menggunakan Postman atau Thunder Client:
+1. **Guest & Auth:** Buka katalog publik (`GET /api/products`), buat akun multi-peran (`POST /api/auth/register`), dan tinggalkan ulasan aman (`POST /api/reviews`).
+2. **Seller:** Login dan pilih peran `SELLER`. Buat toko (`POST /api/stores`), lalu tambahkan produk.
+3. **Buyer:** Beralih ke peran `BUYER`. Lakukan *top-up* saldo (`POST /api/wallet/topup`), masukkan barang dari 1 toko ke keranjang, dan lakukan *checkout* (`POST /api/checkout`) menggunakan kode voucher buatan Admin.
+4. **Seller (Order Processing):** Kembali ke `SELLER`. Cek daftar pesanan masuk, lalu klik tombol proses (`PUT /api/seller/orders/:id/process`).
+5. **Driver:** Beralih ke peran `DRIVER`. Cari pekerjaan logistik yang tersedia (`GET /api/driver/jobs/available`), ambil pekerjaannya (`PUT /api/driver/jobs/:id/take`), dan selesaikan pengiriman (`PUT /api/driver/jobs/:id/complete`) untuk mendapat upah.
+6. **Admin:** Login sebagai `ADMIN`. Cek seluruh statistik *marketplace* di Dasbor Pemantauan (`GET /api/admin/monitoring`), atau lakukan pemanggilan Auto-Refund (`POST /api/admin/simulate-overdue`) pada pesanan yang belum selesai.
+
+---
+**✨ Backend Developed for Software Engineering Academy COMPFEST 18 ✨**
