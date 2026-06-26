@@ -30,6 +30,8 @@ model User {
   wallet    Wallet?
   cart      Cart?
   orders    Order[]
+
+  deliveryJobs DeliveryJob[]
 }
 
 // ==========================================
@@ -125,6 +127,8 @@ model Order {
 
   discount     Float       @default(0)
   history      OrderHistory[]
+
+  deliveryJob  DeliveryJob?
 }
 
 // Tabel Detail Item yang Dipesan
@@ -168,4 +172,20 @@ model OrderHistory {
   order     Order    @relation(fields: [orderId], references: [id])
   status    String   // Contoh: "Sedang Dikemas", "Menunggu Pengirim"
   createdAt DateTime @default(now()) // Timestamp otomatis kapan status berubah
+}
+
+// ==========================================
+// LEVEL 5: DELIVERY & DRIVER WORKFLOW
+// ==========================================
+
+// Tabel Pekerjaan Pengiriman untuk Kurir
+model DeliveryJob {
+  id        String   @id @default(uuid())
+  orderId   String   @unique // 1 Pesanan = 1 Pekerjaan Pengiriman
+  order     Order    @relation(fields: [orderId], references: [id])
+  driverId  String?  // Kosong saat awal dibuat, terisi ketika Driver mengambil pekerjaan
+  driver    User?    @relation(fields: [driverId], references: [id])
+  earning   Float    // Upah untuk kurir
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

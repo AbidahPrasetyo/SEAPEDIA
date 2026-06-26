@@ -994,7 +994,7 @@ app.get('/api/seller/orders', verifyToken, async (req, res) => {
   }
 });
 
-// 2. Proses Pesanan (Ubah status dari "Sedang Dikemas" menjadi "Menunggu Pengirim")
+// 2. Proses Pesanan (Ubah status menjadi "Menunggu Pengirim" & Buat Delivery Job)
 app.put('/api/seller/orders/:orderId/process', verifyToken, async (req, res) => {
   try {
     if (req.user.activeRole !== 'SELLER') {
@@ -1004,51 +1004,45 @@ app.put('/api/seller/orders/:orderId/process', verifyToken, async (req, res) => 
     const orderId = req.params.orderId;
     const userId = req.user.userId;
 
-    // Cari pesanan dan pastikan itu milik toko si Seller
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: { store: true }
     });
 
-    if (!order) {
-      return res.status(404).json({ error: "Pesanan tidak ditemukan." });
-    }
+    if (!order) return res.status(404).json({ error: "Pesanan tidak ditemukan." });
 
-    // Keamanan ekstra: Pastikan toko yang menerima pesanan adalah milik Seller yang sedang login
     if (order.store.ownerId !== userId) {
       return res.status(403).json({ error: "Akses ditolak. Ini bukan pesanan tokomu!" });
     }
 
-    // Sesuai aturan: Hanya pesanan "Sedang Dikemas" yang bisa diproses
     if (order.status !== "Sedang Dikemas") {
-      return res.status(400).json({ 
-        error: `Pesanan tidak bisa diproses karena status saat ini: ${order.status}` 
-      });
+      return res.status(400).json({ error: `Pesanan tidak bisa diproses karena status saat ini: ${order.status}` });
     }
 
-    // Gunakan Transaction untuk memastikan status order dan riwayatnya tersimpan bersamaan
     const updatedOrder = await prisma.$transaction(async (tx) => {
-      // Ubah status di tabel Order
+      // 1. Ubah status Order
       const result = await tx.order.update({
         where: { id: orderId },
         data: { status: "Menunggu Pengirim" }
       });
 
-      // Catat rekam jejak di tabel OrderHistory
+      // 2. Catat riwayat
       await tx.orderHistory.create({
+        data: { orderId: orderId, status: "Menunggu Pengirim" }
+      });
+
+      // 3. Buat Delivery Job agar bisa dicari oleh Driver (Upah kurir = 80% dari ongkir)
+      await tx.deliveryJob.create({
         data: {
           orderId: orderId,
-          status: "Menunggu Pengirim"
+          earning: order.shippingCost * 0.8 
         }
       });
 
       return result;
     });
 
-    res.status(200).json({ 
-      message: "Pesanan berhasil diproses dan siap dijemput kurir!", 
-      data: updatedOrder 
-    });
+    res.status(200).json({ message: "Pesanan berhasil diproses dan masuk ke bursa kurir!", data: updatedOrder });
 
   } catch (error) {
     console.error("Process Order Error:", error);
@@ -1144,6 +1138,163 @@ app.get('/api/seller/report', verifyToken, async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ error: "Gagal mengambil laporan Seller." });
+  }
+});
+
+// ==========================================
+// LEVEL 5: DRIVER WORKFLOW & DASHBOARD
+// ==========================================
+
+// 1. Cari Pekerjaan yang Tersedia (Find Jobs)
+app.get('/api/driver/jobs/available', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'DRIVER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus DRIVER." });
+    }
+
+    // Cari pekerjaan yang driverId-nya masih kosong dan pesanan berstatus "Menunggu Pengirim"
+    const availableJobs = await prisma.deliveryJob.findMany({
+      where: {
+        driverId: null,
+        order: { status: "Menunggu Pengirim" }
+      },
+      include: {
+        order: {
+          include: { 
+            store: { select: { name: true } }, 
+            user: { select: { username: true } } 
+          }
+        }
+      }
+    });
+
+    res.status(200).json({ message: "Bursa pekerjaan kurir", data: availableJobs });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil daftar pekerjaan." });
+  }
+});
+
+// 2. Ambil Pekerjaan (Take Job)
+app.put('/api/driver/jobs/:jobId/take', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'DRIVER') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus DRIVER." });
+    }
+
+    const jobId = req.params.jobId;
+    const driverId = req.user.userId;
+
+    // Pastikan pekerjaan ada dan belum diambil kurir lain
+    const job = await prisma.deliveryJob.findUnique({
+      where: { id: jobId },
+      include: { order: true }
+    });
+
+    if (!job) return res.status(404).json({ error: "Pekerjaan tidak ditemukan." });
+    if (job.driverId !== null) return res.status(400).json({ error: "Maaf, pekerjaan ini sudah diambil kurir lain." });
+    if (job.order.status !== "Menunggu Pengirim") {
+      return res.status(400).json({ error: "Pesanan ini belum siap untuk dikirim." });
+    }
+
+    // Eksekusi Transaction
+    const takenJob = await prisma.$transaction(async (tx) => {
+      // a. Tandai job dengan ID kurir ini
+      const updatedJob = await tx.deliveryJob.update({
+        where: { id: jobId },
+        data: { driverId: driverId }
+      });
+
+      // b. Ubah status pesanan
+      await tx.order.update({
+        where: { id: job.orderId },
+        data: { status: "Sedang Dikirim" }
+      });
+
+      // c. Catat riwayat pesanan
+      await tx.orderHistory.create({
+        data: { orderId: job.orderId, status: "Sedang Dikirim" }
+      });
+
+      return updatedJob;
+    });
+
+    res.status(200).json({ message: "Pekerjaan berhasil diambil! Selamat mengantar.", data: takenJob });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal mengambil pekerjaan." });
+  }
+});
+
+// 3. Selesaikan Pekerjaan (Confirm Completed)
+app.put('/api/driver/jobs/:jobId/complete', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'DRIVER') return res.status(403).json({ error: "Akses ditolak." });
+
+    const job = await prisma.deliveryJob.findUnique({
+      where: { id: req.params.jobId },
+      include: { order: true }
+    });
+
+    if (!job) return res.status(404).json({ error: "Pekerjaan tidak ditemukan." });
+    if (job.driverId !== req.user.userId) return res.status(403).json({ error: "Ini bukan pekerjaanmu!" });
+    if (job.order.status !== "Sedang Dikirim") return res.status(400).json({ error: "Pesanan ini tidak sedang dalam pengiriman." });
+
+    const completedJob = await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: job.orderId },
+        data: { status: "Pesanan Selesai" }
+      });
+
+      await tx.orderHistory.create({
+        data: { orderId: job.orderId, status: "Pesanan Selesai" }
+      });
+
+      return job;
+    });
+
+    res.status(200).json({ message: "Pengiriman selesai! Upah telah masuk ke riwayatmu.", data: completedJob });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menyelesaikan pekerjaan." });
+  }
+});
+
+// 4. Dasbor Kurir & Riwayat Pendapatan (Driver Dashboard)
+app.get('/api/driver/dashboard', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'DRIVER') return res.status(403).json({ error: "Akses ditolak." });
+
+    // Ambil semua pekerjaan yang pernah/sedang dikerjakan oleh driver ini
+    const myJobs = await prisma.deliveryJob.findMany({
+      where: { driverId: req.user.userId },
+      include: { order: true },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    let activeJob = null;
+    let totalEarnings = 0;
+    const history = [];
+
+    // Pisahkan mana pekerjaan yang sedang aktif, dan mana yang sudah selesai
+    myJobs.forEach(job => {
+      if (job.order.status === "Sedang Dikirim") {
+        activeJob = job;
+      } else if (job.order.status === "Pesanan Selesai") {
+        totalEarnings += job.earning;
+        history.push(job);
+      }
+    });
+
+    res.status(200).json({
+      message: "Dasbor Kurir",
+      summary: {
+        totalCompletedJobs: history.length,
+        totalEarnings: totalEarnings
+      },
+      activeJob: activeJob,
+      history: history
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Gagal memuat dasbor kurir." });
   }
 });
 

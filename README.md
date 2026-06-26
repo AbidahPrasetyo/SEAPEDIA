@@ -384,7 +384,7 @@ Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, m
 
 ---
 
-## 📌 Level 4: Discounts and Seller Order Processing
+## Level 4: Discounts and Seller Order Processing
 
 Fitur pada level ini mencakup manajemen diskon (Voucher & Promo) oleh Admin, pemrosesan pesanan oleh Seller, serta rekapitulasi laporan transaksi.
 
@@ -457,4 +457,39 @@ Mengambil seluruh riwayat pesanan yang masuk ke toko beserta total estimasi pend
 **Method:** `GET`
 **Header:** `Authorization: Bearer <TOKEN_SELLER>`
 
-```
+---
+
+## 📌 Level 5: Delivery and Driver Workflow
+
+Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `DRIVER`. Fitur ini mencakup pencarian pekerjaan logistik, pengambilan pesanan, hingga penyelesaian pengiriman.
+
+**Header Wajib:**
+`Authorization: Bearer <TOKEN_DRIVER>`
+
+### 1. Cari Pekerjaan Pengiriman
+Menampilkan daftar pesanan dengan status "Menunggu Pengirim" yang belum diambil oleh kurir manapun.
+
+**URL:** `/api/driver/jobs/available`
+**Method:** `GET`
+**Body:** (Kosong)
+
+### 2. Ambil Pekerjaan (Take Job)
+Mengambil pekerjaan pengiriman. Sistem akan mengunci pesanan ini untuk kurir yang mengambilnya dan mengubah status pesanan menjadi "Sedang Dikirim".
+
+**URL:** `/api/driver/jobs/:jobId/take` *(ganti `:jobId` dengan ID DeliveryJob)*
+**Method:** `PUT`
+**Body:** (Kosong)
+
+### 3. Selesaikan Pekerjaan (Complete Job)
+Menandai bahwa barang telah sampai ke tangan pembeli. Status pesanan berubah menjadi "Pesanan Selesai" dan kurir mendapatkan upah pengiriman.
+
+**URL:** `/api/driver/jobs/:jobId/complete`
+**Method:** `PUT`
+**Body:** (Kosong)
+
+### 4. Dasbor Kurir & Riwayat Pendapatan
+Mengambil rekapitulasi data pekerjaan kurir, termasuk pekerjaan yang sedang aktif (belum selesai), riwayat pekerjaan selesai, dan total pendapatan (*earnings*).
+
+**URL:** `/api/driver/dashboard`
+**Method:** `GET`
+**Body:** (Kosong)
