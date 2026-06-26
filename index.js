@@ -13,6 +13,13 @@ const app = express();
 app.use(express.json());
 
 // ==========================================
+// ROUTE: HALAMAN DEPAN (ROOT)
+// ==========================================
+app.get('/', (req, res) => {
+  res.send('🚀 Selamat datang di API SEAPEDIA Backend! Server berjalan dengan aman.');
+});
+
+// ==========================================
 // MIDDLEWARE: SATPAM PENGECEK TOKEN
 // ==========================================
 const verifyToken = (req, res, next) => {
