@@ -1,600 +1,127 @@
-# SEAPEDIA Backend API - COMPFEST 18
-Ini adalah repositori backend untuk tugas seleksi Software Engineering Academy COMPFEST 18.
+# 🌊 SEAPEDIA Backend API
+**Proyek Seleksi Software Engineering Academy - COMPFEST 18**
 
-## 🛠️ Teknologi yang Digunakan
-* **Framework:** Node.js + Express.js
-* **Database:** PostgreSQL
-* **ORM:** Prisma
-* **Keamanan:** JWT & Bcrypt
-
-## 🚀 Cara Menjalankan Proyek Secara Lokal
-1. **Clone repository ini:**
-   ```bash
-   git clone [https://github.com/AbidahPrasetyo/SEAPEDIA.git](https://github.com/AbidahPrasetyo/SEAPEDIA.git)
-   cd seapedia-backend
-2. **Install semua dependensi:**
-   ```bash
-   npm install
-3. **Siapkan Environtment Variables:**
-Buat file `.env` di root folder dan isi dengan konfigurasi database PostgreSQL kamu:
-   ```Code snippet
-   DATABASE_URL="postgresql://[USER]:[PASSWORD]@localhost:5432/seapedia_db?schema=public"
-   ```
-4. **Jalankan Migrasi Database (Prisma):**
-   ```bash
-   npx prisma migrate dev
-   npx prisma generate
-5. **Jalankan Server:**
-   ```bash
-   node index.js
-   ```
-   Server akan berjalan di `http://localhost:3000`
-   
-## Level 1: Welcome to SEAPEDIA! (Autentikasi & Publik)
-Fitur pada level ini mencakup akses publik (tanpa login) dan sistem autentikasi dasar yang mendukung pemilihan peran aktif (*active role*).
+SEAPEDIA adalah sebuah *Application Programming Interface* (API) untuk platform *marketplace* komprehensif yang memfasilitasi transaksi multi-peran (Pembeli, Penjual, Kurir, dan Admin). Proyek ini dibangun dari nol untuk memenuhi seluruh *Business Rules* dan tantangan teknis dari Level 1 hingga Level 7.
 
 ---
 
-### 1. Registrasi Akun Baru
-Mendaftarkan pengguna baru ke dalam sistem. Satu akun dapat memiliki lebih dari satu peran.
+## 🚀 Live Deployment (Bonus 15 Poin)
+Backend API ini telah berhasil di-*deploy* secara *serverless* dan dapat diakses publik melalui:
+👉 **[https://seapedia-navy.vercel.app](https://seapedia-navy.vercel.app)**
 
-*   **URL:** `/api/auth/register`
-*   **Method:** `POST`
-```json
-    {
-  "username": "sasa",
-  "email": "sasa@example.com",
-  "password": "passwordrahasia",
-  "roles": ["BUYER", "SELLER"]
-   }
-```
-**Response Sukses (201 Created):**
-```json
-    {
-  "message": "Registrasi berhasil!",
-  "user": {
-    "id": "123e4567-e89b-12d3-a456-426614174000",
-    "username": "sasa",
-    "email": "sasa@example.com",
-    "roles": ["BUYER", "SELLER"]
-      }
-   }
-```
-### 2. Login Akun
-Mengautentikasi pengguna menggunakan email/username dan password. Mengembalikan Token JWT awal yang belum memiliki *active role*.
-
-*   **URL:** `/api/auth/login`
-*   **Method:** `POST`
-```json
-    {
-  "username": "sasa",
-  "password": "passwordrahasia"
-   }
-```
-**Response Sukses (200 OK):**
-```json
-{
-  "message": "Login berhasil!",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5c...",
-  "availableRoles": ["BUYER", "SELLER"]
-}
-```
-
-### 3. Memilih Peran Aktif (Select Role)
-Mengaktifkan salah satu peran untuk sesi saat ini. Wajib dilakukan sebelum mengakses dashboard privat. Membutuhkan Token JWT dari proses Login.
-
-*   **URL:** `/api/auth/select-role`
-*   **Method:** `POST`
-*   **Header Wajib:** `Authorization: Bearer <TOKEN_DARI_LOGIN>`
-```json
-    {
-  "role": "SELLER"
-   }
-```
-**Response Sukses (200 OK):**
-```json
-{
-  "message": "Sesi berhasil diubah. Peran aktif saat ini: SELLER",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5c... (TOKEN BARU)",
-  "activeRole": "SELLER"
-}
-```
-
-### 4. Melihat Profil & Peran Aktif
-Mengambil data profil pengguna yang sedang *login* beserta peran yang sedang aktif.
-
-*   **URL:** `/api/auth/me`
-*   **Method:** `GET`
-*   **Header Wajib:** `Authorization: Bearer <TOKEN_DARI_LOGIN>`
-**Response Sukses (200 OK):**
-```json
-    {
-  "profile": {
-    "id": "123e4567-e89b-12d3-a456-426614174000",
-    "username": "sasa",
-    "email": "sasa@example.com",
-    "roles": ["BUYER", "SELLER"]
-  },
-  "activeRole": "SELLER"
-   }
-```
-
-### 5. Katalog Produk Publik
-Menampilkan daftar produk yang tersedia di marketplace. Dapat diakses oleh tamu (tanpa _login_).
-
-*   **URL:** `/api/products`
-*   **Method:** `GET`
-*   **Body:** (Kosong)
-**Response Sukses (200 OK):**
-```json
-    {
-  "data": [
-    {
-      "id": "987fcdeb-51a2-43d7-9012-426614174000",
-      "name": "Buku Pemrograman Node.js",
-      "price": 50000,
-      "stock": 10,
-      "storeId": "123e4567-e89b-12d3-a456-426614174000",
-      "store": {
-        "name": "Toko Vokasi Sasa"
-      }
-    }
-  ]
-}
-```
-
-### 6. Submit Review Aplikasi Publik
-Mengirimkan ulasan terkait pengalaman menggunakan aplikasi SEAPEDIA. Dapat dilakukan oleh tamu.
-
-*   **URL:** `/api/reviews`
-*   **Method:** `POST`
-*   **Body JSON:**
-```json
-    {
-  "name": "Pengunjung",
-  "rating": 5,
-  "comment": "Aplikasi marketplace yang sangat responsif!"
-}
-```
-**Response Sukses (201 Created):**
-```json
-{
-  "message": "Terima kasih atas ulasanmu!",
-  "review": {
-    "id": "111a222b-333c-444d-555e-666f777g888h",
-    "name": "Pengunjung",
-    "rating": 5,
-    "comment": "Aplikasi marketplace yang sangat responsif!",
-    "createdAt": "2026-06-24T10:00:00.000Z"
-  }
-}
-```
-
-## Level 2: Fitur Seller (Manajemen Toko & Produk)
-
-Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `SELLER`. Semua *endpoint* di bawah ini mewajibkan autentikasi token JWT.
-
-**Header Wajib:**
-`Authorization: Bearer <TOKEN_JWT_DARI_LOGIN_ATAU_SELECT_ROLE>`
+*(Catatan: Gunakan base URL di atas untuk menggantikan `http://localhost:3000` saat melakukan pengujian menggunakan Postman, Thunder Client, atau saat integrasi dengan Frontend).*
 
 ---
 
-### 1. Melihat Dasbor Toko Sendiri
-Mengambil informasi toko milik pengguna beserta daftar produk (buku) yang dijual di toko tersebut.
-
-*   **URL:** `/api/stores/me`
-*   **Method:** `GET`
-*   **Body:** (Kosong)
-*   **Response Sukses (200 OK):**
-```json
-    {
-      "data": {
-        "id": "123e4567-e89b-12d3-a456-426614174000",
-        "name": "Nama Toko Sasa",
-        "ownerId": "id-user-seller",
-        "products": [
-          {
-            "id": "987fcdeb-51a2-43d7-9012-426614174000",
-            "name": "Buku Pemrograman Node.js",
-            "price": 50000,
-            "stock": 10
-          }
-        ]
-      }
-    }
-```
-
-### 2. Update Data Produk
-Mengubah detail informasi produk yang ada di dalam toko milik *seller*. Hanya pemilik toko yang dapat mengedit produknya sendiri.
-
-*   **URL:** `/api/products/:id` *(ganti `:id` dengan ID produk)*
-*   **Method:** `PUT`
-*   **Body JSON (Kirimkan field yang ingin diubah saja):**
-```json
-    {
-      "price": 55000,
-      "stock": 8
-    }
-```
-*   **Response Sukses (200 OK):**
-```json
-    {
-      "message": "Produk berhasil diupdate!",
-      "product": {
-        "id": "987fcdeb-51a2-43d7-9012-426614174000",
-        "name": "Buku Pemrograman Node.js",
-        "price": 55000,
-        "stock": 8
-      }
-    }
-```
-
-### 3. Menghapus Produk
-Menghapus produk dari *database* toko. Sistem akan memvalidasi bahwa produk tersebut benar-benar milik *seller* yang sedang *login*.
-
-*   **URL:** `/api/products/:id` *(ganti `:id` dengan ID produk)*
-*   **Method:** `DELETE`
-*   **Body:** (Kosong)
-*   **Response Sukses (200 OK):**
-```json
-    {
-      "message": "Produk berhasil dihapus!"
-    }
-```
-
-### Penanganan Error (Error Handling) Level 2:
-*   **403 Forbidden:** Muncul jika token valid, tetapi `activeRole` pengguna saat ini bukanlah `SELLER`, atau jika pengguna mencoba mengedit/menghapus produk yang bukan milik tokonya.
-*   **404 Not Found:** Muncul jika pengguna `SELLER` belum membuat toko, atau ID produk yang di-*request* tidak ditemukan di *database*.
-*   **500 Internal Server Error:** Muncul jika terjadi kegagalan pada server atau koneksi *database* Prisma.
+## 🛠️ Tech Stack
+*   **Runtime:** Node.js
+*   **Framework:** Express.js
+*   **Database:** PostgreSQL (Hosted on Neon.tech)
+*   **ORM:** Prisma
+*   **Authentication:** JSON Web Token (JWT) & bcrypt (Password Hashing)
+*   **Security:** `xss` library untuk pencegahan Cross-Site Scripting
+*   **Deployment:** Vercel
 
 ---
 
-## Level 3: Buyer Experience (Dompet, Keranjang, & Checkout)
-
-Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `BUYER`. Fitur ini mencakup logika *Single-Store Checkout* dan *Database Transaction*.
-
-**Header Wajib:**
-`Authorization: Bearer <TOKEN_JWT_DARI_SELECT_ROLE>`
-
-### 1. Cek Saldo Dompet
-Melihat jumlah saldo dompet virtual pembeli. Jika pembeli belum memiliki dompet, sistem akan otomatis membuatkannya dengan saldo Rp 0.
-
-**URL:** `/api/wallet`
-**Method:** `GET`
-**Body:** (Kosong)
-
-**Response Sukses (200 OK):**
-```json
-{
-  "data": {
-    "id": "dompet-id-123",
-    "balance": 0,
-    "userId": "buyer-id-456",
-    "updatedAt": "2026-06-24T12:00:00.000Z"
-  }
-}
-```
-
-### 2. Top-Up Saldo Dompet
-
-Menambahkan saldo ke dompet pembeli untuk persiapan *checkout*.
-
-**URL:** `/api/wallet/topup`
-**Method:** `POST`
-
-**Body JSON:**
-
-```json
-{
-  "amount": 500000
-}
-
-```
-
-**Response Sukses (200 OK):**
-
-```json
-{
-  "message": "Top-up sebesar Rp 500000 berhasil!",
-  "wallet": {
-    "id": "dompet-id-123",
-    "balance": 500000,
-    "userId": "buyer-id-456",
-    "updatedAt": "2026-06-24T12:05:00.000Z"
-  }
-}
-
-```
-
-### 3. Lihat Isi Keranjang
-
-Menampilkan isi keranjang belanja pembeli saat ini beserta detail produk dan toko.
-
-**URL:** `/api/cart`
-**Method:** `GET`
-**Body:** (Kosong)
-
-### 4. Tambah Produk ke Keranjang (Single-Store Rule)
-
-Memasukkan produk ke dalam keranjang. Sistem akan menolak secara otomatis jika pembeli mencoba memasukkan produk dari toko yang berbeda dengan produk yang sudah ada di dalam keranjang.
-
-**URL:** `/api/cart`
-**Method:** `POST`
-
-**Body JSON:**
-
-```json
-{
-  "productId": "id-produk-buku-123",
-  "quantity": 2
-}
-
-```
-
-**Response Sukses (201 Created):**
-
-```json
-{
-  "message": "Produk berhasil ditambahkan ke keranjang!",
-  "item": {
-    "id": "item-id-123",
-    "cartId": "cart-id-456",
-    "productId": "id-produk-buku-123",
-    "quantity": 2
-  }
-}
-
-```
-
-### 5. Hapus Produk dari Keranjang
-
-Menghapus spesifik item dari keranjang belanja.
-
-**URL:** `/api/cart/:itemId` *(ganti `:itemId` dengan ID dari CartItem)*
-**Method:** `DELETE`
-**Body:** (Kosong)
-
-### 6. Checkout Pesanan (Transaksi, Ongkir, & Diskon)
-Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, memotong saldo dompet, menghitung PPN 12%, menetapkan ongkos kirim berdasarkan metode pengiriman, dan memotong harga jika ada kode diskon (Voucher/Promo) yang valid.
-
-**URL:** `/api/checkout`
-**Method:** `POST`
-**Header Wajib:** `Authorization: Bearer <TOKEN_BUYER>`
-
-**Body JSON:**
-```json
-{
-  "deliveryMethod": "Regular",
-  "discountCode": "COMPFEST18" 
-}
-
-```
-
-*(Catatan: `discountCode` bersifat opsional. `deliveryMethod` wajib diisi dengan "Instant", "Next Day", atau "Regular").*
-
-**Response Sukses (200 OK):**
-
-```json
-{
-  "message": "Checkout berhasil!",
-  "summary": {
-    "discountType": "Voucher digunakan",
-    "subtotal": 100000,
-    "discount": 20000,
-    "shippingCost": 10000,
-    "tax_PPN_12": 9600,
-    "finalTotal": 99600
-  },
-  "order": {
-    "id": "order-id-789",
-    "status": "Sedang Dikemas"
-  }
-}
-
-```
-
-Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, memotong saldo dompet, menghitung PPN 12% dan ongkos kirim, membuat rekaman pesanan, mengurangi stok toko, dan mengosongkan keranjang.
-
-**URL:** `/api/checkout`
-**Method:** `POST`
-**Body:** (Kosong, membaca langsung dari keranjang database)
-
-**Response Sukses (200 OK):**
-
-```json
-{
-  "message": "Checkout berhasil! Pesanan sedang diproses.",
-  "receipt": {
-    "id": "order-id-789",
-    "userId": "buyer-id-456",
-    "storeId": "store-id-123",
-    "subtotal": 100000,
-    "tax": 12000,
-    "shippingCost": 15000,
-    "totalAmount": 127000,
-    "status": "PAID",
-    "createdAt": "2026-06-24T12:15:00.000Z"
-  }
-}
-
-```
+## 🎯 Fitur & Pencapaian Level
+*   ✅ **Level 1:** Registrasi, Login JWT, Multi-Role, Katalog Produk, Ulasan Publik.
+*   ✅ **Level 2:** Manajemen Toko dan CRUD Produk oleh *Seller*.
+*   ✅ **Level 3:** Sistem Dompet (*Wallet*), Keranjang (*Cart*), Aturan *Single-Store Checkout*, dan Kalkulasi Transaksi.
+*   ✅ **Level 4:** Sistem Diskon (Voucher/Promo) Admin, *Order Processing* Seller, & Laporan Keuangan.
+*   ✅ **Level 5:** Alur Logistik Kurir (*Driver Workflow*) mulai dari ambil paket hingga selesai.
+*   ✅ **Level 6:** Dasbor Pemantauan Admin & Sistem Pengembalian Dana Otomatis (*Auto-Refund/Overdue*).
+*   ✅ **Level 7:** Keamanan (Anti SQL-Injection & Anti-XSS) serta Dokumentasi *End-to-End*.
 
 ---
 
-## Level 4: Discounts and Seller Order Processing
+## ⚙️ Cara Menjalankan di Lokal (Local Setup)
 
-Fitur pada level ini mencakup manajemen diskon (Voucher & Promo) oleh Admin, pemrosesan pesanan oleh Seller, serta rekapitulasi laporan transaksi.
+Jika ingin menjalankan kode ini di laptop lokal untuk pengembangan:
 
-### 1. Buat Voucher Baru (Khusus ADMIN)
-Membuat diskon tipe Voucher dengan batas kedaluwarsa dan batas kuota penggunaan.
-
-**URL:** `/api/admin/vouchers`
-**Method:** `POST`
-**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
-
-**Body JSON:**
-```json
-{
-  "code": "COMPFEST18",
-  "discount": 20000,
-  "quota": 100,
-  "expiresAt": "2026-12-31"
-}
-
-```
-
-### 2. Buat Promo Baru (Khusus ADMIN)
-
-Membuat diskon tipe Promo dengan batas kedaluwarsa tanpa batas kuota penggunaan.
-
-**URL:** `/api/admin/promos`
-**Method:** `POST`
-**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
-
-**Body JSON:**
-
-```json
-{
-  "code": "ONGKIRMURAH",
-  "discount": 10000,
-  "expiresAt": "2026-12-31"
-}
-
-```
-
-### 3. Lihat Semua Diskon (Khusus ADMIN)
-
-Mengambil seluruh data Voucher dan Promo yang tersedia di dalam sistem.
-
-**URL:** `/api/admin/discounts`
-**Method:** `GET`
-**Header:** `Authorization: Bearer <TOKEN_ADMIN>`
-
-### 4. Proses Pesanan (Khusus SELLER)
-
-Mengubah status pesanan masuk dari `"Sedang Dikemas"` menjadi `"Menunggu Pengirim"`.
-
-**URL:** `/api/seller/orders/:orderId/process`
-**Method:** `PUT`
-**Header:** `Authorization: Bearer <TOKEN_SELLER>`
-
-### 5. Laporan Pengeluaran Buyer
-
-Mengambil seluruh riwayat belanja pembeli beserta total kalkulasi uang yang telah dihabiskan.
-
-**URL:** `/api/buyer/report`
-**Method:** `GET`
-**Header:** `Authorization: Bearer <TOKEN_BUYER>`
-
-### 6. Laporan Pendapatan Seller
-
-Mengambil seluruh riwayat pesanan yang masuk ke toko beserta total estimasi pendapatan bersih. Pendapatan dihitung dari subtotal setelah diskon (tidak termasuk ongkos kirim dan PPN).
-
-**URL:** `/api/seller/report`
-**Method:** `GET`
-**Header:** `Authorization: Bearer <TOKEN_SELLER>`
+1.  **Clone repositori ini:**
+    ```bash
+    git clone [https://github.com/USERNAME_KAMU/SEAPEDIA.git](https://github.com/USERNAME_KAMU/SEAPEDIA.git)
+    cd SEAPEDIA
+    ```
+2.  **Instal dependensi:**
+    ```bash
+    npm install
+    ```
+3.  **Siapkan Database:**
+    *   Buat file `.env` di folder utama.
+    *   Isi dengan: `DATABASE_URL="postgresql://user:password@host/db_name"`
+4.  **Migrasi Prisma:**
+    ```bash
+    npx prisma migrate dev
+    npx prisma generate
+    ```
+5.  **Jalankan Server:**
+    ```bash
+    npm start
+    ```
 
 ---
 
-## Level 5: Delivery and Driver Workflow
+## 📚 Dokumentasi API Singkat
 
-Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `DRIVER`. Fitur ini mencakup pencarian pekerjaan logistik, pengambilan pesanan, hingga penyelesaian pengiriman.
+Semua *endpoint* privat wajib menyertakan token di bagian header:
+`Authorization: Bearer <TOKEN_JWT_SESUAI_PERAN>`
 
-**Header Wajib:**
-`Authorization: Bearer <TOKEN_DRIVER>`
+### 👤 Autentikasi & Akun
+*   `POST /api/auth/register` - Daftar akun baru.
+*   `POST /api/auth/login` - Masuk dan dapatkan Token (berlaku 1 hari).
+*   `POST /api/auth/select-role` - Memilih/mengubah peran aktif (`activeRole`).
+*   `GET /api/auth/me` - Lihat profil pengguna.
 
-### 1. Cari Pekerjaan Pengiriman
-Menampilkan daftar pesanan dengan status "Menunggu Pengirim" yang belum diambil oleh kurir manapun.
+### 🏪 Fitur Publik & Buyer
+*   `GET /api/products` - Lihat katalog publik.
+*   `POST /api/reviews` - Kirim ulasan aplikasi (Aman dari XSS).
+*   `GET /api/wallet` - Cek saldo dompet (Khusus BUYER).
+*   `POST /api/wallet/topup` - Isi saldo dompet (Khusus BUYER).
+*   `POST /api/cart` - Tambah produk ke keranjang.
+*   `POST /api/checkout` - Eksekusi transaksi, hitung ongkir, PPN 12%, dan validasi Diskon.
+*   `GET /api/buyer/report` - Laporan pengeluaran pembeli.
 
-**URL:** `/api/driver/jobs/available`
-**Method:** `GET`
-**Body:** (Kosong)
+### 🛍️ Fitur Seller
+*   `POST /api/stores` - Buka toko baru.
+*   `POST /api/products` - Tambah produk ke toko.
+*   `PUT /api/products/:id` - Edit produk.
+*   `DELETE /api/products/:id` - Hapus produk.
+*   `GET /api/seller/orders` - Lihat pesanan masuk.
+*   `PUT /api/seller/orders/:orderId/process` - Proses pesanan ke kurir.
+*   `GET /api/seller/report` - Laporan pendapatan bersih toko.
 
-### 2. Ambil Pekerjaan (Take Job)
-Mengambil pekerjaan pengiriman. Sistem akan mengunci pesanan ini untuk kurir yang mengambilnya dan mengubah status pesanan menjadi "Sedang Dikirim".
+### 🛵 Fitur Driver (Kurir)
+*   `GET /api/driver/jobs/available` - Cari paket siap kirim.
+*   `PUT /api/driver/jobs/:jobId/take` - Ambil pekerjaan kiriman.
+*   `PUT /api/driver/jobs/:jobId/complete` - Selesaikan pengiriman & terima upah.
+*   `GET /api/driver/dashboard` - Dasbor riwayat dan total pendapatan.
 
-**URL:** `/api/driver/jobs/:jobId/take` *(ganti `:jobId` dengan ID DeliveryJob)*
-**Method:** `PUT`
-**Body:** (Kosong)
-
-### 3. Selesaikan Pekerjaan (Complete Job)
-Menandai bahwa barang telah sampai ke tangan pembeli. Status pesanan berubah menjadi "Pesanan Selesai" dan kurir mendapatkan upah pengiriman.
-
-**URL:** `/api/driver/jobs/:jobId/complete`
-**Method:** `PUT`
-**Body:** (Kosong)
-
-### 4. Dasbor Kurir & Riwayat Pendapatan
-Mengambil rekapitulasi data pekerjaan kurir, termasuk pekerjaan yang sedang aktif (belum selesai), riwayat pekerjaan selesai, dan total pendapatan (*earnings*).
-
-**URL:** `/api/driver/dashboard`
-**Method:** `GET`
-**Body:** (Kosong)
-
----
-
-## Level 6: Admin Monitoring and Overdue Handling
-
-Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `ADMIN`. Fitur ini mencakup pemantauan aktivitas *marketplace* dan penyelesaian masalah pesanan yang terlambat (*Auto-Refund*).
-
-**Header Wajib:**
-`Authorization: Bearer <TOKEN_ADMIN>`
-
-### 1. Dasbor Pemantauan (Monitoring Marketplace)
-Melihat statistik keseluruhan dari aplikasi, termasuk jumlah pengguna, toko, produk, total transaksi, pekerjaan kurir, dan persebaran status pesanan.
-
-**URL:** `/api/admin/monitoring`
-**Method:** `GET`
-**Body:** (Kosong)
-
-### 2. Simulasi Waktu & Trigger Overdue (Auto-Refund)
-Memajukan waktu sistem (simulasi) untuk mendeteksi pesanan yang terlambat diproses oleh penjual atau belum diambil kurir (SLA timeout). Pesanan yang melampaui batas waktu akan otomatis dibatalkan, uang dikembalikan penuh ke dompet pembeli, dan stok produk dikembalikan ke toko.
-
-**URL:** `/api/admin/simulate-overdue`
-**Method:** `POST`
-
-**Body JSON:**
-```json
-{
-  "simulateDays": 1 
-}
-
-```
-
-*(Catatan: Nilai `simulateDays` adalah jumlah hari yang ingin disimulasikan ke masa depan. Gunakan angka `0` untuk mengeksekusi Auto-Refund pada semua pesanan aktif saat ini demi keperluan demonstrasi instan).*
-
-**Response Sukses (200 OK):**
-
-```json
-{
-  "message": "Simulasi waktu maju 1 hari selesai. 1 pesanan dibatalkan otomatis dan uang direfund.",
-  "refundedOrderIds": [
-    "order-id-789"
-  ]
-}
-
-```
+### 👑 Fitur Admin
+*   `POST /api/admin/vouchers` - Buat kuota diskon terbatas.
+*   `POST /api/admin/promos` - Buat promo tanpa batas kuota.
+*   `GET /api/admin/monitoring` - Lihat statistik *marketplace* secara *real-time*.
+*   `POST /api/admin/simulate-overdue` - Picu mesin waktu untuk membatalkan pesanan yang telat (SLA) & *Auto-Refund*.
 
 ---
 
-## Level 7: Security Hardening & Finalization
+## 🛡️ Keamanan & Testing (Level 7)
 
-Pada level ini, aplikasi telah diamankan dari celah keamanan dasar dan dilengkapi dengan dokumentasi akhir untuk keperluan evaluasi end-to-end.
+### Catatan Keamanan
+1.  **SQL Injection Prevention:** Seluruh interaksi *database* menggunakan Prisma ORM yang secara otomatis melakukan *parameterized queries* sehingga kebal terhadap serangan SQL Injection.
+2.  **XSS (Cross-Site Scripting) Prevention:** Input publik, terutama pada komentar ulasan (*App Review*), telah disanitasi menggunakan pustaka `xss` sebelum disimpan ke *database*.
+3.  **Role-Based Access Control (RBAC):** Autorisasi divalidasi secara ketat di level *backend* melalui JWT Payload (`activeRole`) dan *middleware*. Pengguna multi-peran hanya dapat mengakses *endpoint* privat yang sesuai dengan peran aktif mereka.
+4.  **Data Ownership Validation:** Aksi operasional sensitif memiliki pengecekan lapis dua untuk memastikan entitas tersebut benar-benar milik *user* yang memintanya.
 
-### 🛡️ Catatan Keamanan (Security Notes)
-1. **SQL Injection Prevention:** Seluruh interaksi *database* menggunakan Prisma ORM yang secara otomatis melakukan *parameterized queries* sehingga kebal terhadap serangan SQL Injection.
-2. **XSS (Cross-Site Scripting) Prevention:** Input publik, terutama pada komentar ulasan (*App Review*), telah disanitasi menggunakan pustaka `xss` sebelum disimpan ke *database*. Hal ini mencegah eksekusi tag `<script>` berbahaya jika di-*render* oleh *frontend*.
-3. **Role-Based Access Control (RBAC):** Autorisasi divalidasi secara ketat di level *backend* melalui JWT Payload (`activeRole`) dan *middleware*. Pengguna multi-peran hanya dapat mengakses *endpoint* privat yang sesuai dengan peran aktif mereka di sesi tersebut.
-4. **Data Ownership Validation:** Aksi operasional sensitif (mengubah produk, memproses pesanan, menyelesaikan pengiriman) memiliki pengecekan lapis dua untuk memastikan entitas tersebut benar-benar milik *user* yang memintanya.
-
-### 🧪 Panduan Testing (End-to-End Demo Guide)
-Untuk mengevaluasi alur lengkap sistem SEAPEDIA, silakan ikuti siklus berikut menggunakan Postman atau Thunder Client:
-1. **Guest & Auth:** Buka katalog publik (`GET /api/products`), buat akun multi-peran (`POST /api/auth/register`), dan tinggalkan ulasan aman (`POST /api/reviews`).
-2. **Seller:** Login dan pilih peran `SELLER`. Buat toko (`POST /api/stores`), lalu tambahkan produk.
-3. **Buyer:** Beralih ke peran `BUYER`. Lakukan *top-up* saldo (`POST /api/wallet/topup`), masukkan barang dari 1 toko ke keranjang, dan lakukan *checkout* (`POST /api/checkout`) menggunakan kode voucher buatan Admin.
-4. **Seller (Order Processing):** Kembali ke `SELLER`. Cek daftar pesanan masuk, lalu klik tombol proses (`PUT /api/seller/orders/:id/process`).
-5. **Driver:** Beralih ke peran `DRIVER`. Cari pekerjaan logistik yang tersedia (`GET /api/driver/jobs/available`), ambil pekerjaannya (`PUT /api/driver/jobs/:id/take`), dan selesaikan pengiriman (`PUT /api/driver/jobs/:id/complete`) untuk mendapat upah.
-6. **Admin:** Login sebagai `ADMIN`. Cek seluruh statistik *marketplace* di Dasbor Pemantauan (`GET /api/admin/monitoring`), atau lakukan pemanggilan Auto-Refund (`POST /api/admin/simulate-overdue`) pada pesanan yang belum selesai.
+### Panduan Pengujian (End-to-End Demo Guide)
+Untuk mengevaluasi alur lengkap sistem SEAPEDIA, ikuti siklus ini:
+1.  **Guest & Auth:** Buka katalog publik (`GET /api/products`), buat akun (`POST /api/auth/register`), dan tinggalkan ulasan (`POST /api/reviews`).
+2.  **Seller:** Login dan pilih peran `SELLER`. Buat toko (`POST /api/stores`), lalu tambahkan produk.
+3.  **Buyer:** Beralih ke peran `BUYER`. Lakukan *top-up* (`POST /api/wallet/topup`), masukkan barang ke keranjang, dan lakukan *checkout* (`POST /api/checkout`) menggunakan kode voucher Admin.
+4.  **Seller:** Kembali ke `SELLER`. Cek pesanan masuk, lalu proses pesanan (`PUT /api/seller/orders/:id/process`).
+5.  **Driver:** Beralih ke peran `DRIVER`. Cari pekerjaan logistik (`GET /api/driver/jobs/available`), ambil pekerjaannya, dan selesaikan pengiriman untuk mendapat upah.
+6.  **Admin:** Login sebagai `ADMIN`. Cek seluruh statistik di Dasbor (`GET /api/admin/monitoring`), atau lakukan *Auto-Refund* (`POST /api/admin/simulate-overdue`) pada pesanan yang sengaja didiamkan.
 
 ---
-**✨ Backend Developed for Software Engineering Academy COMPFEST 18 ✨**
+**✨ Backend Developed with ❤️ for COMPFEST 18 ✨**
