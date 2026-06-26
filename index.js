@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const express = require('express');
+const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 const xss = require('xss');
@@ -11,6 +12,7 @@ const app = express();
 
 // Middleware wajib agar Express bisa membaca data JSON yang dikirim ke server
 app.use(express.json());
+app.use(cors());
 
 // ==========================================
 // ROUTE: HALAMAN DEPAN (ROOT)
