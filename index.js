@@ -1299,6 +1299,140 @@ app.get('/api/driver/dashboard', verifyToken, async (req, res) => {
 });
 
 // ==========================================
+// LEVEL 6: ADMIN MONITORING DASHBOARD
+// ==========================================
+
+// 1. Dasbor Pemantauan Keseluruhan (Monitoring Marketplace)
+app.get('/api/admin/monitoring', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'ADMIN') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus ADMIN." });
+    }
+
+    // Gunakan Promise.all agar database mencari semua data secara paralel (lebih cepat)
+    const [
+      totalUsers,
+      totalStores,
+      totalProducts,
+      totalOrders,
+      totalDeliveryJobs,
+      ordersByStatus
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.store.count(),
+      prisma.product.count(),
+      prisma.order.count(),
+      prisma.deliveryJob.count(),
+      // Mengelompokkan pesanan berdasarkan statusnya
+      prisma.order.groupBy({
+        by: ['status'],
+        _count: { status: true }
+      })
+    ]);
+
+    res.status(200).json({
+      message: "Data Dasbor Pemantauan Admin",
+      data: {
+        users: totalUsers,
+        stores: totalStores,
+        products: totalProducts,
+        orders: totalOrders,
+        deliveryJobs: totalDeliveryJobs,
+        orderStatistics: ordersByStatus.map(item => ({
+          status: item.status,
+          count: item._count.status
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error("Monitoring Error:", error);
+    res.status(500).json({ error: "Gagal memuat data pemantauan." });
+  }
+});
+
+// 2. Simulasi Waktu & Trigger Overdue (Auto-Refund)
+app.post('/api/admin/simulate-overdue', verifyToken, async (req, res) => {
+  try {
+    if (req.user.activeRole !== 'ADMIN') {
+      return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus ADMIN." });
+    }
+
+    // Default simulasi: memajukan waktu sistem sebanyak 1 hari ke depan
+    const { simulateDays = 1 } = req.body; 
+    
+    // Hitung batas waktu (Waktu saat ini dikurangi jumlah hari simulasi)
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - simulateDays);
+
+    // Cari pesanan yang "nyangkut" (Sedang Dikemas / Menunggu Pengirim) yang dibuat SEBELUM targetDate
+    const overdueOrders = await prisma.order.findMany({
+      where: {
+        status: { in: ["Sedang Dikemas", "Menunggu Pengirim"] },
+        createdAt: { lt: targetDate } // 'lt' = less than (lebih tua dari targetDate)
+      },
+      include: { items: true }
+    });
+
+    if (overdueOrders.length === 0) {
+      return res.status(200).json({ 
+        message: `Waktu dimajukan ${simulateDays} hari. Semua pesanan aman, tidak ada yang terlambat!` 
+      });
+    }
+
+    const refundedOrders = [];
+
+    // Eksekusi Refund untuk setiap pesanan yang telat
+    for (const order of overdueOrders) {
+      await prisma.$transaction(async (tx) => {
+        // a. Ubah status jadi Dikembalikan
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: "Dikembalikan" }
+        });
+
+        // b. Catat history
+        await tx.orderHistory.create({
+          data: { orderId: order.id, status: "Dikembalikan" }
+        });
+
+        // c. Refund saldo pembeli secara utuh
+        await tx.wallet.update({
+          where: { userId: order.userId },
+          data: { balance: { increment: order.totalAmount } }
+        });
+
+        // d. Kembalikan stok toko
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } }
+          });
+        }
+        
+        // e. Tarik mundur pekerjaan kurir (jika belum sempat diambil)
+        if (order.status === "Menunggu Pengirim") {
+          await tx.deliveryJob.deleteMany({
+            where: { orderId: order.id, driverId: null }
+          });
+        }
+      });
+      
+      refundedOrders.push(order.id);
+    }
+
+    res.status(200).json({ 
+      message: `Simulasi waktu maju ${simulateDays} hari selesai. ${refundedOrders.length} pesanan dibatalkan otomatis dan uang direfund.`,
+      refundedOrderIds: refundedOrders
+    });
+
+  } catch (error) {
+    console.error("Overdue Error:", error);
+    res.status(500).json({ error: "Gagal memproses overdue otomatis." });
+  }
+});
+
+// ==========================================
 // MENJALANKAN SERVER
 // ==========================================
 const PORT = 3000;

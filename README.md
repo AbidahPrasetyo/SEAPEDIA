@@ -354,7 +354,44 @@ Menghapus spesifik item dari keranjang belanja.
 **Method:** `DELETE`
 **Body:** (Kosong)
 
-### 6. Checkout Pesanan (Transaksi)
+### 6. Checkout Pesanan (Transaksi, Ongkir, & Diskon)
+Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, memotong saldo dompet, menghitung PPN 12%, menetapkan ongkos kirim berdasarkan metode pengiriman, dan memotong harga jika ada kode diskon (Voucher/Promo) yang valid.
+
+**URL:** `/api/checkout`
+**Method:** `POST`
+**Header Wajib:** `Authorization: Bearer <TOKEN_BUYER>`
+
+**Body JSON:**
+```json
+{
+  "deliveryMethod": "Regular",
+  "discountCode": "COMPFEST18" 
+}
+
+```
+
+*(Catatan: `discountCode` bersifat opsional. `deliveryMethod` wajib diisi dengan "Instant", "Next Day", atau "Regular").*
+
+**Response Sukses (200 OK):**
+
+```json
+{
+  "message": "Checkout berhasil!",
+  "summary": {
+    "discountType": "Voucher digunakan",
+    "subtotal": 100000,
+    "discount": 20000,
+    "shippingCost": 10000,
+    "tax_PPN_12": 9600,
+    "finalTotal": 99600
+  },
+  "order": {
+    "id": "order-id-789",
+    "status": "Sedang Dikemas"
+  }
+}
+
+```
 
 Memproses pembelian seluruh barang di keranjang. Sistem akan memvalidasi stok, memotong saldo dompet, menghitung PPN 12% dan ongkos kirim, membuat rekaman pesanan, mengurangi stok toko, dan mengosongkan keranjang.
 
@@ -459,7 +496,7 @@ Mengambil seluruh riwayat pesanan yang masuk ke toko beserta total estimasi pend
 
 ---
 
-## 📌 Level 5: Delivery and Driver Workflow
+## Level 5: Delivery and Driver Workflow
 
 Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `DRIVER`. Fitur ini mencakup pencarian pekerjaan logistik, pengambilan pesanan, hingga penyelesaian pengiriman.
 
@@ -493,3 +530,47 @@ Mengambil rekapitulasi data pekerjaan kurir, termasuk pekerjaan yang sedang akti
 **URL:** `/api/driver/dashboard`
 **Method:** `GET`
 **Body:** (Kosong)
+
+---
+
+## Level 6: Admin Monitoring and Overdue Handling
+
+Fitur pada level ini dikhususkan untuk pengguna dengan peran aktif (`activeRole`) sebagai `ADMIN`. Fitur ini mencakup pemantauan aktivitas *marketplace* dan penyelesaian masalah pesanan yang terlambat (*Auto-Refund*).
+
+**Header Wajib:**
+`Authorization: Bearer <TOKEN_ADMIN>`
+
+### 1. Dasbor Pemantauan (Monitoring Marketplace)
+Melihat statistik keseluruhan dari aplikasi, termasuk jumlah pengguna, toko, produk, total transaksi, pekerjaan kurir, dan persebaran status pesanan.
+
+**URL:** `/api/admin/monitoring`
+**Method:** `GET`
+**Body:** (Kosong)
+
+### 2. Simulasi Waktu & Trigger Overdue (Auto-Refund)
+Memajukan waktu sistem (simulasi) untuk mendeteksi pesanan yang terlambat diproses oleh penjual atau belum diambil kurir (SLA timeout). Pesanan yang melampaui batas waktu akan otomatis dibatalkan, uang dikembalikan penuh ke dompet pembeli, dan stok produk dikembalikan ke toko.
+
+**URL:** `/api/admin/simulate-overdue`
+**Method:** `POST`
+
+**Body JSON:**
+```json
+{
+  "simulateDays": 1 
+}
+
+```
+
+*(Catatan: Nilai `simulateDays` adalah jumlah hari yang ingin disimulasikan ke masa depan. Gunakan angka `0` untuk mengeksekusi Auto-Refund pada semua pesanan aktif saat ini demi keperluan demonstrasi instan).*
+
+**Response Sukses (200 OK):**
+
+```json
+{
+  "message": "Simulasi waktu maju 1 hari selesai. 1 pesanan dibatalkan otomatis dan uang direfund.",
+  "refundedOrderIds": [
+    "order-id-789"
+  ]
+}
+
+```
