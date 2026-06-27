@@ -35,7 +35,7 @@ const verifyToken = (req, res, next) => {
   }
 
   // 3. Verifikasi keaslian token
-  const SECRET_KEY = "RahasiaTokenIniSangatKuat"; // Harus sama dengan yang di rute Login
+  const SECRET_KEY = "rahasia_negara"; // Harus sama dengan yang di rute Login
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) return res.status(403).json({ error: "Token tidak valid atau sudah kedaluwarsa!" });
     
@@ -164,7 +164,7 @@ app.post('/api/auth/select-role', verifyToken, async (req, res) => {
     }
 
     // 3. Buat Token BARU yang sekarang menyertakan 'activeRole'
-    const SECRET_KEY = "RahasiaTokenIniSangatKuat";
+    const SECRET_KEY = "rahasia_negara";
     const newToken = jwt.sign(
       { 
         userId: user.id, 
