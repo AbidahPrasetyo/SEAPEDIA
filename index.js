@@ -1500,7 +1500,7 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       // Sembunyikan password agar tidak terkirim ke frontend!
-      select: { name: true, username: true, email: true } 
+      select: { username: true, email: true } 
     });
     res.json(user);
   } catch (error) {
@@ -1511,10 +1511,10 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
 // 2. Memperbarui data profil & kata sandi
 app.put('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const { name, username, email, password } = req.body;
+    const { username, email, password } = req.body;
     
     // Siapkan data yang akan diubah
-    let updateData = { name, username, email };
+    let updateData = { username, email };
 
     // Jika user mengisi kolom password baru, kita enkripsi dulu
     if (password && password.trim() !== "") {
@@ -1524,7 +1524,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: req.user.userId },
       data: updateData,
-      select: { name: true, username: true, email: true }
+      select: { username: true, email: true }
     });
 
     res.json({ message: 'Profil berhasil diperbarui!', user: updatedUser });
