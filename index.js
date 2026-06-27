@@ -1440,6 +1440,57 @@ app.post('/api/admin/simulate-overdue', verifyToken, async (req, res) => {
 });
 
 // ==========================================
+// MIDDLEWARE: SATPAM TOKEN JWT
+// ==========================================
+// Fungsi ini akan mencegat request untuk memeriksa apakah user punya "tiket" (token) yang sah
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Mengambil token dari format "Bearer <token>"
+
+  if (!token) return res.status(401).json({ message: 'Akses ditolak. Token tidak ditemukan.' });
+
+  jwt.verify(token, process.env.JWT_SECRET || 'rahasia_negara', (err, user) => {
+    if (err) return res.status(403).json({ message: 'Sesi telah berakhir atau token tidak valid.' });
+    req.user = user; // Menyimpan data identitas ke dalam request
+    next(); // Lolos pemeriksaan, lanjut ke rute yang dituju
+  });
+};
+
+// ==========================================
+// ROUTE: AMBIL DATA DASBOR PEMBELI
+// ==========================================
+app.get('/api/buyer/dashboard', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // 1. Cek saldo dompet
+    const wallet = await prisma.wallet.findUnique({ where: { userId } });
+    
+    // 2. Hitung isi keranjang
+    const cart = await prisma.cart.findUnique({
+      where: { userId },
+      include: { items: true }
+    });
+
+    // 3. Hitung jumlah pesanan yang sedang aktif/dikirim
+    const activeOrders = await prisma.order.count({
+      where: { userId }
+    });
+
+    // Kirim rekap data ke frontend
+    res.json({
+      walletBalance: wallet ? wallet.balance : 0,
+      cartItemsCount: cart ? cart.items.length : 0,
+      activeOrdersCount: activeOrders
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Gagal mengambil data dasbor.' });
+  }
+});
+
+// ==========================================
 // MENJALANKAN SERVER (MENDUKUNG LOKAL & VERCEL)
 // ==========================================
 if (process.env.NODE_ENV !== 'production') {
