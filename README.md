@@ -7,7 +7,7 @@ SEAPEDIA adalah sebuah *Application Programming Interface* (API) untuk platform 
 
 ## 🚀 Live Deployment (Bonus 15 Poin)
 Backend API ini telah berhasil di-*deploy* secara *serverless* dan dapat diakses publik melalui:
-👉 **[https://seapedia-navy.vercel.app](https://seapedia-navy.vercel.app)**
+👉 **[https://seapedia-app.vercel.app/](seapedia-app.vercel.app)**
 
 *(Catatan: Gunakan base URL di atas untuk menggantikan `http://localhost:3000` saat melakukan pengujian menggunakan Postman, Thunder Client, atau saat integrasi dengan Frontend).*
 
