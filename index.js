@@ -96,56 +96,52 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // ==========================================
-// ROUTE: LOGIN USER
+// ROUTE: LOGIN
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    // 1. Ekstrak username dan password dari request body
+    const { username, password } = req.body;
 
-    // 1. Cari user berdasarkan email ATAU username
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ email: email }, { username: username }]
-      }
+    // 2. Cari pengguna di database berdasarkan username
+    const user = await prisma.user.findUnique({
+      where: { username: username }
     });
 
-    // Jika user tidak ditemukan
     if (!user) {
-      return res.status(401).json({ error: "Akun tidak ditemukan!" });
+      return res.status(401).json({ message: 'Username tidak ditemukan' });
     }
 
-    // 2. Cocokkan password yang diketik dengan yang ada di database (yang di-hash)
+    // 3. Verifikasi password dengan bcrypt
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    
     if (!isPasswordValid) {
-      return res.status(401).json({ error: "Password salah!" });
+      return res.status(401).json({ message: 'Kata sandi salah' });
     }
 
-    // 3. Buat JWT (Tiket Masuk)
-    // RahasiaTokenIni harusnya ditaruh di file .env, tapi kita taruh di sini dulu agar mudah
-    const SECRET_KEY = "RahasiaTokenIniSangatKuat"; 
-    
-    // Perhatikan: Kita HANYA memasukkan data yang tidak sensitif ke dalam token
+    // 4. Buat Token JWT (Sertakan seluruh array roles)
     const token = jwt.sign(
       { 
         userId: user.id, 
         username: user.username,
-        roles: user.roles
+        roles: user.roles // JWT sekarang menyimpan array peran
       }, 
-      SECRET_KEY, 
-      { expiresIn: '1d' } // Token hangus dalam 1 hari
+      process.env.JWT_SECRET || 'rahasia_negara', 
+      { expiresIn: '1d' }
     );
 
-    // 4. Kirim balasan sukses beserta token dan daftar peran yang dimiliki
-    res.status(200).json({
-      message: "Login berhasil!",
+    res.json({
+      message: 'Login berhasil',
       token: token,
-      availableRoles: user.roles // Penting untuk Level 1 COMPFEST: Biar user tahu dia punya role apa saja
+      user: {
+        id: user.id,
+        username: user.username,
+        roles: user.roles
+      }
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Terjadi kesalahan saat login" });
+    res.status(500).json({ message: 'Terjadi kesalahan pada server' });
   }
 });
 
