@@ -1491,6 +1491,51 @@ app.get('/api/buyer/dashboard', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
+// ROUTE: PROFIL PENGGUNA (AMBIL & UBAH)
+// ==========================================
+
+// 1. Mengambil data profil saat ini
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      // Sembunyikan password agar tidak terkirim ke frontend!
+      select: { name: true, username: true, email: true } 
+    });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Gagal mengambil data profil.' });
+  }
+});
+
+// 2. Memperbarui data profil & kata sandi
+app.put('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    const { name, username, email, password } = req.body;
+    
+    // Siapkan data yang akan diubah
+    let updateData = { name, username, email };
+
+    // Jika user mengisi kolom password baru, kita enkripsi dulu
+    if (password && password.trim() !== "") {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: updateData,
+      select: { name: true, username: true, email: true }
+    });
+
+    res.json({ message: 'Profil berhasil diperbarui!', user: updatedUser });
+  } catch (error) {
+    console.error(error);
+    // Error biasanya terjadi jika username/email sudah dipakai orang lain
+    res.status(400).json({ message: 'Gagal memperbarui. Username atau Email mungkin sudah digunakan.' });
+  }
+});
+
+// ==========================================
 // MENJALANKAN SERVER (MENDUKUNG LOKAL & VERCEL)
 // ==========================================
 if (process.env.NODE_ENV !== 'production') {
