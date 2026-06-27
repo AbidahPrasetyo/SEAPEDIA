@@ -1536,6 +1536,34 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
+// ROUTE: DETAIL KERANJANG BELANJA (GET)
+// ==========================================
+app.get('/api/buyer/cart', authenticateToken, async (req, res) => {
+  try {
+    const cart = await prisma.cart.findUnique({
+      where: { userId: req.user.userId },
+      include: {
+        items: {
+          include: {
+            product: true // Menarik data produk (nama, harga, dsb) sekaligus
+          }
+        }
+      }
+    });
+
+    // Jika user belum punya keranjang sama sekali, kirim array kosong
+    if (!cart) {
+      return res.json({ items: [] });
+    }
+
+    res.json({ items: cart.items });
+  } catch (error) {
+    console.error("Error GET Cart:", error);
+    res.status(500).json({ message: 'Gagal mengambil detail keranjang belanja.' });
+  }
+});
+
+// ==========================================
 // MENJALANKAN SERVER (MENDUKUNG LOKAL & VERCEL)
 // ==========================================
 if (process.env.NODE_ENV !== 'production') {
